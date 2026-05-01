@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::ExecServerError;
@@ -11,6 +12,7 @@ use crate::client_api::ExecServerTransportParams;
 use crate::environment_provider::DefaultEnvironmentProvider;
 use crate::environment_provider::EnvironmentProvider;
 use crate::environment_provider::normalize_exec_server_url;
+use crate::environment_toml::environment_provider_from_codex_home;
 use crate::local_file_system::LocalFileSystem;
 use crate::local_process::LocalProcess;
 use crate::process::ExecBackend;
@@ -47,12 +49,14 @@ pub const REMOTE_ENVIRONMENT_ID: &str = "remote";
 
 #[derive(Clone, Debug)]
 pub struct EnvironmentManagerArgs {
+    pub codex_home: std::path::PathBuf,
     pub local_runtime_paths: ExecServerRuntimePaths,
 }
 
 impl EnvironmentManagerArgs {
-    pub fn new(local_runtime_paths: ExecServerRuntimePaths) -> Self {
+    pub fn new(codex_home: impl AsRef<Path>, local_runtime_paths: ExecServerRuntimePaths) -> Self {
         Self {
+            codex_home: codex_home.as_ref().to_path_buf(),
             local_runtime_paths,
         }
     }
@@ -88,14 +92,15 @@ impl EnvironmentManager {
         Self::from_default_provider_url(exec_server_url, local_runtime_paths)
     }
 
-    /// Builds a manager from `CODEX_EXEC_SERVER_URL` and local runtime paths
-    /// used when creating local filesystem helpers.
-    pub fn new(args: EnvironmentManagerArgs) -> Self {
+    /// Builds a manager from `CODEX_HOME` and local runtime paths used when
+    /// creating local filesystem helpers.
+    pub fn new(args: EnvironmentManagerArgs) -> Result<Self, ExecServerError> {
         let EnvironmentManagerArgs {
+            codex_home,
             local_runtime_paths,
         } = args;
-        let exec_server_url = std::env::var(CODEX_EXEC_SERVER_URL_ENV_VAR).ok();
-        Self::from_default_provider_url(exec_server_url, local_runtime_paths)
+        let provider = environment_provider_from_codex_home(codex_home.as_path())?;
+        Self::from_provider(provider.as_ref(), local_runtime_paths)
     }
 
     fn from_default_provider_url(
