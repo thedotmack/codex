@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::ExecServerError;
@@ -47,21 +46,6 @@ pub struct EnvironmentManager {
 pub const LOCAL_ENVIRONMENT_ID: &str = "local";
 pub const REMOTE_ENVIRONMENT_ID: &str = "remote";
 
-#[derive(Clone, Debug)]
-pub struct EnvironmentManagerArgs {
-    pub codex_home: std::path::PathBuf,
-    pub local_runtime_paths: ExecServerRuntimePaths,
-}
-
-impl EnvironmentManagerArgs {
-    pub fn new(codex_home: impl AsRef<Path>, local_runtime_paths: ExecServerRuntimePaths) -> Self {
-        Self {
-            codex_home: codex_home.as_ref().to_path_buf(),
-            local_runtime_paths,
-        }
-    }
-}
-
 impl EnvironmentManager {
     /// Builds a test-only manager without configured sandbox helper paths.
     pub fn default_for_tests() -> Self {
@@ -94,12 +78,15 @@ impl EnvironmentManager {
 
     /// Builds a manager from `CODEX_HOME` and local runtime paths used when
     /// creating local filesystem helpers.
-    pub fn new(args: EnvironmentManagerArgs) -> Result<Self, ExecServerError> {
-        let EnvironmentManagerArgs {
-            codex_home,
-            local_runtime_paths,
-        } = args;
-        let provider = environment_provider_from_codex_home(codex_home.as_path())?;
+    ///
+    /// If `CODEX_HOME/environments.toml` is present, it defines the configured
+    /// environments. Otherwise this preserves the legacy
+    /// `CODEX_EXEC_SERVER_URL` behavior.
+    pub fn from_codex_home(
+        codex_home: impl AsRef<std::path::Path>,
+        local_runtime_paths: ExecServerRuntimePaths,
+    ) -> Result<Self, ExecServerError> {
+        let provider = environment_provider_from_codex_home(codex_home.as_ref())?;
         Self::from_provider(provider.as_ref(), local_runtime_paths)
     }
 

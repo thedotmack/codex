@@ -15,7 +15,6 @@ pub use cli::Command;
 pub use cli::ReviewArgs;
 use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
 use codex_app_server_client::EnvironmentManager;
-use codex_app_server_client::EnvironmentManagerArgs;
 use codex_app_server_client::ExecServerRuntimePaths;
 use codex_app_server_client::InProcessAppServerClient;
 use codex_app_server_client::InProcessClientStartArgs;
@@ -512,10 +511,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         feedback: CodexFeedback::new(),
         log_db: None,
         environment_manager: std::sync::Arc::new(
-            EnvironmentManager::new(EnvironmentManagerArgs::new(
-                config.codex_home.clone(),
-                local_runtime_paths,
-            ))
+            EnvironmentManager::from_codex_home(config.codex_home.clone(), local_runtime_paths)
+                ?,
         ),
         config_warnings,
         session_source: SessionSource::Exec,

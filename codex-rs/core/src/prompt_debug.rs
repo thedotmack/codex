@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use codex_exec_server::EnvironmentManager;
-use codex_exec_server::EnvironmentManagerArgs;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_login::AuthManager;
 use codex_protocol::error::CodexErr;
@@ -41,11 +40,8 @@ pub async fn build_prompt_input(
         Arc::clone(&auth_manager),
         SessionSource::Exec,
         Arc::new(
-            EnvironmentManager::new(EnvironmentManagerArgs::new(
-                config.codex_home.clone(),
-                local_runtime_paths,
-            ))
-            .map_err(|err| CodexErr::Fatal(err.to_string()))?,
+            EnvironmentManager::from_codex_home(config.codex_home.clone(), local_runtime_paths)
+                .map_err(|err| CodexErr::Fatal(err.to_string()))?,
         ),
         /*analytics_events_client*/ None,
         thread_store_from_config(&config),

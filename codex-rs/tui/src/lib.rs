@@ -40,7 +40,6 @@ use codex_config::ConfigLoadError;
 use codex_config::LoaderOverrides;
 use codex_config::format_config_error_with_source;
 use codex_exec_server::EnvironmentManager;
-use codex_exec_server::EnvironmentManagerArgs;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_login::AuthConfig;
 use codex_login::default_client::set_default_client_residency_requirement;
@@ -749,13 +748,13 @@ pub async fn run_main(
     };
 
     let environment_manager = Arc::new(
-        EnvironmentManager::new(EnvironmentManagerArgs::new(
+        EnvironmentManager::from_codex_home(
             codex_home.clone(),
             ExecServerRuntimePaths::from_optional_paths(
                 arg0_paths.codex_self_exe.clone(),
                 arg0_paths.codex_linux_sandbox_exe.clone(),
             )?,
-        ))
+        )
         .map_err(std::io::Error::other)?,
     );
     let cwd = cli.cwd.clone();

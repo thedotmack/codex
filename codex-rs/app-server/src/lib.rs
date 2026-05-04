@@ -7,7 +7,6 @@ use codex_config::NoopThreadConfigLoader;
 use codex_config::RemoteThreadConfigLoader;
 use codex_config::ThreadConfigLoader;
 use codex_core::config::Config;
-use codex_exec_server::EnvironmentManagerArgs;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_utils_cli::CliConfigOverrides;
@@ -432,13 +431,13 @@ pub async fn run_main_with_transport_options(
     })?;
     let codex_home = find_codex_home()?;
     let environment_manager = Arc::new(
-        EnvironmentManager::new(EnvironmentManagerArgs::new(
+        EnvironmentManager::from_codex_home(
             codex_home.clone(),
             ExecServerRuntimePaths::from_optional_paths(
                 arg0_paths.codex_self_exe.clone(),
                 arg0_paths.codex_linux_sandbox_exe.clone(),
             )?,
-        ))
+        )
         .map_err(std::io::Error::other)?,
     );
     let config_manager = ConfigManager::new(
