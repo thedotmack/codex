@@ -3,6 +3,7 @@ use crate::FreeformToolFormat;
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use crate::tool_spec::maybe_insert_environment_id_parameter;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -82,14 +83,28 @@ It is important to remember:
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplyPatchToolArgs {
     pub input: String,
+    #[serde(default)]
+    pub environment_id: Option<String>,
 }
 
 /// Returns a custom tool that can be used to edit files. Well-suited for GPT-5 models
 /// https://platform.openai.com/docs/guides/function-calling#custom-tools
 pub fn create_apply_patch_freeform_tool() -> ToolSpec {
+    create_apply_patch_freeform_tool_with_environment_id(/*include_environment_id*/ false)
+}
+
+pub(crate) fn create_apply_patch_freeform_tool_with_environment_id(
+    include_environment_id: bool,
+) -> ToolSpec {
+    let description = if include_environment_id {
+        "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON. To target a selected environment, include `*** Environment ID: <id>` immediately after `*** Begin Patch`."
+    } else {
+        "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."
+    };
+
     ToolSpec::Freeform(FreeformTool {
         name: "apply_patch".to_string(),
-        description: "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON. To target a selected environment, include `*** Environment ID: <id>` immediately after `*** Begin Patch`.".to_string(),
+        description: description.to_string(),
         format: FreeformToolFormat {
             r#type: "grammar".to_string(),
             syntax: "lark".to_string(),
@@ -100,12 +115,19 @@ pub fn create_apply_patch_freeform_tool() -> ToolSpec {
 
 /// Returns a json tool that can be used to edit files. Should only be used with gpt-oss models
 pub fn create_apply_patch_json_tool() -> ToolSpec {
-    let properties = BTreeMap::from([(
+    create_apply_patch_json_tool_with_environment_id(/*include_environment_id*/ false)
+}
+
+pub(crate) fn create_apply_patch_json_tool_with_environment_id(
+    include_environment_id: bool,
+) -> ToolSpec {
+    let mut properties = BTreeMap::from([(
         "input".to_string(),
         JsonSchema::string(Some(
             "The entire contents of the apply_patch command".to_string(),
         )),
     )]);
+    maybe_insert_environment_id_parameter(&mut properties, include_environment_id);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "apply_patch".to_string(),

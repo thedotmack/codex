@@ -18,6 +18,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::get_remote_test_env;
+use core_test_support::responses::ev_apply_patch_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -26,6 +27,7 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::ApplyPatchModelOutput;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::test_env;
@@ -59,6 +61,13 @@ async fn shell_command_test(server: &wiremock::MockServer) -> Result<TestCodex> 
         })
         .build_remote_aware(server)
         .await
+}
+
+async fn apply_patch_test(server: &wiremock::MockServer) -> Result<TestCodex> {
+    let mut builder = test_codex().with_config(|config| {
+        config.include_apply_patch_tool = true;
+    });
+    builder.build_remote_aware(server).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -478,6 +487,96 @@ async fn shell_command_resolves_relative_workdir_in_selected_remote_environment(
         !output.contains("local-routing"),
         "shell_command should resolve workdir in the selected remote environment: {output}",
     );
+
+    test.fs()
+        .remove(
+            &remote_cwd,
+            RemoveOptions {
+                recursive: true,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn freeform_apply_patch_routes_to_selected_remote_environment() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let Some(_remote_env) = get_remote_test_env() else {
+        return Ok(());
+    };
+
+    let server = start_mock_server().await;
+    let test = apply_patch_test(&server).await?;
+    let local_cwd = TempDir::new()?;
+    let local_selection = TurnEnvironmentSelection {
+        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd: local_cwd.path().abs(),
+    };
+    let remote_cwd = PathBuf::from(format!(
+        "/tmp/codex-apply-patch-routing-{}",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    ))
+    .abs();
+    test.fs()
+        .create_directory(
+            &remote_cwd,
+            CreateDirectoryOptions { recursive: true },
+            /*sandbox*/ None,
+        )
+        .await?;
+    let remote_selection = TurnEnvironmentSelection {
+        environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+        cwd: remote_cwd.clone(),
+    };
+    let file_name = format!(
+        "codex-apply-patch-remote-{}.txt",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    );
+    let patch = format!(
+        "*** Begin Patch\n*** Environment ID: {REMOTE_ENVIRONMENT_ID}\n*** Add File: {file_name}\n+remote-apply-patch\n*** End Patch"
+    );
+    let call_id = "call-apply-patch-remote-env";
+    let response_mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-apply-patch-1"),
+                ev_apply_patch_call(call_id, &patch, ApplyPatchModelOutput::Freeform),
+                ev_completed("resp-apply-patch-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-apply-patch-2"),
+                ev_assistant_message("msg-apply-patch-1", "done"),
+                ev_completed("resp-apply-patch-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn_with_environments(
+        "route freeform apply_patch",
+        Some(vec![local_selection, remote_selection]),
+    )
+    .await?;
+
+    let output = response_mock
+        .last_request()
+        .with_context(|| format!("missing request containing apply_patch output for {call_id}"))?
+        .custom_tool_call_output(call_id);
+    assert!(
+        output.to_string().contains("Success"),
+        "unexpected apply_patch output: {output:?}",
+    );
+    let remote_contents = test
+        .fs()
+        .read_file(&remote_cwd.join(&file_name), /*sandbox*/ None)
+        .await?;
+    assert_eq!(remote_contents, b"remote-apply-patch\n");
+    assert!(!local_cwd.path().join(&file_name).exists());
 
     test.fs()
         .remove(

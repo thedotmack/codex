@@ -1623,6 +1623,7 @@ fn patch_approval_request_from_params(
         call_id: params.item_id,
         turn_id: params.turn_id,
         changes: HashMap::new(),
+        cwd: None,
         reason: params.reason,
         grant_root: params.grant_root,
     }
@@ -4527,6 +4528,7 @@ impl ChatWidget {
 
     pub(crate) fn handle_apply_patch_approval_now(&mut self, ev: ApplyPatchApprovalRequestEvent) {
         self.flush_answer_stream_with_separator();
+        let cwd = ev.cwd.clone().unwrap_or_else(|| self.config.cwd.clone());
 
         let request = ApprovalRequest::ApplyPatch {
             thread_id: self.thread_id.unwrap_or_default(),
@@ -4534,13 +4536,13 @@ impl ChatWidget {
             id: ev.call_id,
             reason: ev.reason,
             changes: ev.changes.clone(),
-            cwd: self.config.cwd.clone(),
+            cwd: cwd.clone(),
         };
         self.bottom_pane
             .push_approval_request(request, &self.config.features);
         self.request_redraw();
         self.notify(Notification::EditApprovalRequested {
-            cwd: self.config.cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
             changes: ev.changes.keys().cloned().collect(),
         });
     }

@@ -249,6 +249,45 @@ fn shell_command_spec_includes_environment_id_only_for_multiple_selected_environ
 }
 
 #[test]
+fn apply_patch_spec_mentions_environment_id_only_for_multiple_selected_environments() {
+    let model_info = model_info();
+    let available_models = Vec::new();
+    let config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &Features::with_defaults(),
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (single_environment_tools, _) = build_specs(
+        &config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_apply_patch_freeform_environment_id_description(
+        &single_environment_tools,
+        /*expected_present*/ false,
+    );
+
+    let multi_environment_config = config.with_environment_mode(ToolEnvironmentMode::Multiple);
+    let (multi_environment_tools, _) = build_specs(
+        &multi_environment_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_apply_patch_freeform_environment_id_description(
+        &multi_environment_tools,
+        /*expected_present*/ true,
+    );
+}
+
+#[test]
 fn test_build_specs_collab_tools_enabled() {
     let model_info = model_info();
     let mut features = Features::with_defaults();
@@ -2569,6 +2608,21 @@ fn assert_process_tool_environment_id(
         properties.contains_key("environment_id"),
         expected_present,
         "{expected_name} environment_id parameter presence"
+    );
+}
+
+fn assert_apply_patch_freeform_environment_id_description(
+    tools: &[ConfiguredToolSpec],
+    expected_present: bool,
+) {
+    let tool = find_tool(tools, "apply_patch");
+    let ToolSpec::Freeform(tool) = &tool.spec else {
+        panic!("expected freeform apply_patch tool");
+    };
+    assert_eq!(
+        tool.description.contains("Environment ID"),
+        expected_present,
+        "apply_patch environment id description presence"
     );
 }
 

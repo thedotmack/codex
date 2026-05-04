@@ -522,15 +522,17 @@ async fn handle_patch_approval(
     let ApplyPatchApprovalRequestEvent {
         call_id,
         changes,
+        cwd,
         reason,
         grant_root,
         ..
     } = event;
     let approval_id = call_id.clone();
+    let cwd = cwd.unwrap_or_else(|| parent_ctx.cwd.clone());
     let guardian_decision = if routes_approval_to_guardian(parent_ctx) {
         let files = changes
             .keys()
-            .map(|path| parent_ctx.cwd.join(path))
+            .map(|path| cwd.join(path))
             .collect::<Vec<_>>();
         let review_cancel = cancel_token.child_token();
         let patch = changes
@@ -566,7 +568,7 @@ async fn handle_patch_approval(
             new_guardian_review_id(),
             GuardianApprovalRequest::ApplyPatch {
                 id: approval_id.clone(),
-                cwd: parent_ctx.cwd.clone(),
+                cwd: cwd.clone(),
                 files,
                 patch,
             },
@@ -591,7 +593,7 @@ async fn handle_patch_approval(
         decision
     } else {
         let decision_rx = parent_session
-            .request_patch_approval(parent_ctx, call_id, changes, reason, grant_root)
+            .request_patch_approval(parent_ctx, call_id, changes, cwd, reason, grant_root)
             .await;
         await_approval_with_cancel(
             async move { decision_rx.await.unwrap_or_default() },

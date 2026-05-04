@@ -371,6 +371,9 @@ pub struct ApplyPatchApprovalRequestEvent {
     #[serde(default)]
     pub turn_id: String,
     pub changes: HashMap<PathBuf, FileChange>,
+    /// Cwd used to resolve relative patch paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<AbsolutePathBuf>,
     /// Optional explanatory reason (e.g. request for extra write access).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,

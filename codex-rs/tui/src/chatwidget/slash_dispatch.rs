@@ -450,6 +450,7 @@ impl ChatWidget {
                                 },
                             ),
                         ]),
+                        cwd: None,
                         reason: None,
                         grant_root: Some(PathBuf::from("/tmp")),
                     },

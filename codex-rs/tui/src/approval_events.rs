@@ -113,6 +113,8 @@ pub(crate) struct ApplyPatchApprovalRequestEvent {
     pub(crate) turn_id: String,
     pub(crate) changes: HashMap<PathBuf, FileChange>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) cwd: Option<AbsolutePathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) grant_root: Option<PathBuf>,

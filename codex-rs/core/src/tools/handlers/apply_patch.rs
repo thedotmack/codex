@@ -463,15 +463,10 @@ impl ToolHandler for ApplyPatchHandler {
             (Some(argument_environment_id), _) => Some(argument_environment_id),
             (None, metadata_environment_id) => metadata_environment_id,
         };
-        let environment_arguments = environment_id.as_ref().map_or_else(
-            || "{}".to_string(),
-            |environment_id| serde_json::json!({ "environment_id": environment_id }).to_string(),
-        );
-
         // Re-parse and verify the patch so we can compute changes and approval.
         // Avoid building temporary ExecParams/command vectors; derive directly from inputs.
         let Some(target_environment) =
-            resolve_tool_environment(turn.as_ref(), &environment_arguments)?
+            resolve_tool_environment(turn.as_ref(), environment_id.as_deref())?
         else {
             return Err(FunctionCallError::RespondToModel(
                 "apply_patch is unavailable in this session".to_string(),
@@ -479,8 +474,9 @@ impl ToolHandler for ApplyPatchHandler {
         };
         let cwd = target_environment.cwd.clone();
         let command = vec!["apply_patch".to_string(), patch_input.clone()];
-        let fs = target_environment.environment.get_filesystem();
-        let sandbox = target_environment.environment.is_remote().then(|| {
+        let environment = Arc::clone(&target_environment.environment);
+        let fs = environment.get_filesystem();
+        let sandbox = environment.is_remote().then(|| {
             turn.file_system_sandbox_context_for_cwd(&cwd, /*additional_permissions*/ None)
         });
         match codex_apply_patch::maybe_parse_apply_patch_verified(
@@ -521,7 +517,7 @@ impl ToolHandler for ApplyPatchHandler {
 
                         let req = ApplyPatchRequest {
                             action: apply.action,
-                            environment: target_environment.environment.clone(),
+                            environment: Arc::clone(&environment),
                             file_system: fs.clone(),
                             file_paths,
                             changes,

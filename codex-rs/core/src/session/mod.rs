@@ -1946,6 +1946,7 @@ impl Session {
         turn_context: &TurnContext,
         call_id: String,
         changes: HashMap<PathBuf, FileChange>,
+        cwd: AbsolutePathBuf,
         reason: Option<String>,
         grant_root: Option<PathBuf>,
     ) -> oneshot::Receiver<ReviewDecision> {
@@ -1970,6 +1971,7 @@ impl Session {
             call_id,
             turn_id: turn_context.sub_id.clone(),
             changes,
+            cwd: Some(cwd),
             reason,
             grant_root,
         });

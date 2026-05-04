@@ -279,10 +279,19 @@ impl ToolHandler for ExecCommandHandler {
             }
         };
 
+        let apply_patch_sandbox = environment.is_remote().then(|| {
+            let mut context = context
+                .turn
+                .file_system_sandbox_context(/*additional_permissions*/ None);
+            context.cwd = Some(cwd.clone());
+            context
+        });
         if let Some(output) = intercept_apply_patch(
             &command,
             &cwd,
-            fs.as_ref(),
+            environment.clone(),
+            fs.clone(),
+            apply_patch_sandbox,
             context.session.clone(),
             context.turn.clone(),
             Some(&tracker),

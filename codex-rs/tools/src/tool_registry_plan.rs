@@ -18,12 +18,12 @@ use crate::ToolSpec;
 use crate::ToolsConfig;
 use crate::ViewImageToolOptions;
 use crate::WebSearchToolOptions;
+use crate::apply_patch_tool::create_apply_patch_freeform_tool_with_environment_id;
+use crate::apply_patch_tool::create_apply_patch_json_tool_with_environment_id;
 use crate::coalesce_loadable_tool_specs;
 use crate::collect_code_mode_exec_prompt_tool_definitions;
 use crate::collect_request_plugin_install_entries;
 use crate::collect_tool_search_source_infos;
-use crate::create_apply_patch_freeform_tool;
-use crate::create_apply_patch_json_tool;
 use crate::create_close_agent_tool_v1;
 use crate::create_close_agent_tool_v2;
 use crate::create_code_mode_tool;
@@ -338,14 +338,14 @@ pub fn build_tool_registry_plan(
         match apply_patch_tool_type {
             ApplyPatchToolType::Freeform => {
                 plan.push_spec(
-                    create_apply_patch_freeform_tool(),
+                    create_apply_patch_freeform_tool_with_environment_id(include_environment_id),
                     /*supports_parallel_tool_calls*/ false,
                     config.code_mode_enabled,
                 );
             }
             ApplyPatchToolType::Function => {
                 plan.push_spec(
-                    create_apply_patch_json_tool(),
+                    create_apply_patch_json_tool_with_environment_id(include_environment_id),
                     /*supports_parallel_tool_calls*/ false,
                     config.code_mode_enabled,
                 );
