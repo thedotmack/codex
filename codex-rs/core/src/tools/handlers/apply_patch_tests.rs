@@ -15,6 +15,8 @@ use tempfile::TempDir;
 use tokio::sync::Mutex;
 
 use crate::session::tests::make_session_and_context;
+use crate::session::turn_context::TurnEnvironment;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::PostToolUsePayload;
@@ -28,8 +30,32 @@ fn sample_patch() -> &'static str {
 *** End Patch"#
 }
 
+fn sample_patch_with_environment_id() -> &'static str {
+    r#"*** Begin Patch
+*** Environment ID: remote
+*** Add File: hello.txt
++hello
+*** End Patch"#
+}
+
+fn sample_patch_with_selected_environment_id() -> &'static str {
+    r#"*** Begin Patch
+*** Environment ID: selected
+*** Add File: hello.txt
++hello
+*** End Patch"#
+}
+
 async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
     let (session, turn) = make_session_and_context().await;
+    invocation_for_session_turn(session, turn, payload)
+}
+
+fn invocation_for_session_turn(
+    session: crate::session::session::Session,
+    turn: TurnContext,
+    payload: ToolPayload,
+) -> ToolInvocation {
     ToolInvocation {
         session: session.into(),
         turn: turn.into(),
@@ -37,9 +63,34 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-apply-patch".to_string(),
         tool_name: codex_tools::ToolName::plain("apply_patch"),
-        source: crate::tools::context::ToolCallSource::Direct,
+        source: ToolCallSource::Direct,
         payload,
     }
+}
+
+fn set_two_local_turn_environments(
+    turn: &mut TurnContext,
+    primary_cwd: AbsolutePathBuf,
+    selected_cwd: AbsolutePathBuf,
+) {
+    let environment = Arc::new(
+        codex_exec_server::Environment::create_for_tests(None).expect("create environment"),
+    );
+    turn.cwd = primary_cwd.clone();
+    turn.environments.turn_environments = vec![
+        TurnEnvironment {
+            environment_id: "local".to_string(),
+            environment: Arc::clone(&environment),
+            cwd: primary_cwd,
+            shell: "bash".to_string(),
+        },
+        TurnEnvironment {
+            environment_id: "selected".to_string(),
+            environment,
+            cwd: selected_cwd,
+            shell: "bash".to_string(),
+        },
+    ];
 }
 
 #[tokio::test]
@@ -96,6 +147,91 @@ async fn post_tool_use_payload_uses_patch_input_and_tool_output() {
             tool_input: json!({ "command": patch }),
             tool_response: json!("Success. Updated files."),
         })
+    );
+}
+
+#[tokio::test]
+async fn json_apply_patch_uses_selected_environment_cwd() {
+    let tmp = TempDir::new().expect("tmp");
+    let primary_cwd = tmp.path().join("primary").abs();
+    let selected_cwd = tmp.path().join("selected").abs();
+    std::fs::create_dir_all(primary_cwd.as_path()).expect("create primary cwd");
+    std::fs::create_dir_all(selected_cwd.as_path()).expect("create selected cwd");
+    let (session, mut turn) = make_session_and_context().await;
+    set_two_local_turn_environments(&mut turn, primary_cwd.clone(), selected_cwd.clone());
+
+    let payload = ToolPayload::Function {
+        arguments: json!({
+            "input": sample_patch(),
+            "environment_id": "selected",
+        })
+        .to_string(),
+    };
+    let invocation = invocation_for_session_turn(session, turn, payload);
+
+    ApplyPatchHandler
+        .handle(invocation)
+        .await
+        .expect("apply_patch should succeed");
+
+    assert_eq!(
+        std::fs::read_to_string(selected_cwd.join("hello.txt").as_path())
+            .expect("selected environment file should be written"),
+        "hello\n"
+    );
+    assert!(!primary_cwd.join("hello.txt").as_path().exists());
+}
+
+#[tokio::test]
+async fn freeform_apply_patch_uses_selected_environment_metadata_cwd() {
+    let tmp = TempDir::new().expect("tmp");
+    let primary_cwd = tmp.path().join("primary").abs();
+    let selected_cwd = tmp.path().join("selected").abs();
+    std::fs::create_dir_all(primary_cwd.as_path()).expect("create primary cwd");
+    std::fs::create_dir_all(selected_cwd.as_path()).expect("create selected cwd");
+    let (session, mut turn) = make_session_and_context().await;
+    set_two_local_turn_environments(&mut turn, primary_cwd.clone(), selected_cwd.clone());
+
+    let payload = ToolPayload::Custom {
+        input: sample_patch_with_selected_environment_id().to_string(),
+    };
+    let invocation = invocation_for_session_turn(session, turn, payload);
+
+    ApplyPatchHandler
+        .handle(invocation)
+        .await
+        .expect("apply_patch should succeed");
+
+    assert_eq!(
+        std::fs::read_to_string(selected_cwd.join("hello.txt").as_path())
+            .expect("selected environment file should be written"),
+        "hello\n"
+    );
+    assert!(!primary_cwd.join("hello.txt").as_path().exists());
+}
+
+#[test]
+fn parse_apply_patch_input_strips_environment_metadata() {
+    let input =
+        parse_apply_patch_input(sample_patch_with_environment_id().to_string()).expect("parse");
+
+    assert_eq!(
+        (input.environment_id, input.patch),
+        (Some("remote".to_string()), sample_patch().to_string())
+    );
+}
+
+#[test]
+fn parse_apply_patch_input_rejects_empty_environment_metadata() {
+    let err = parse_apply_patch_input(
+        "*** Begin Patch\n*** Environment ID: \n*** Add File: hello.txt\n+hello\n*** End Patch"
+            .to_string(),
+    )
+    .expect_err("empty environment id should fail");
+
+    assert_eq!(
+        err.to_string(),
+        "environment_id cannot be empty".to_string()
     );
 }
 
@@ -168,6 +304,54 @@ fn diff_consumer_streams_apply_patch_changes() {
                 },
             )]),
         )
+    );
+}
+
+#[test]
+fn diff_consumer_streams_apply_patch_changes_with_environment_metadata() {
+    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+    assert!(
+        consumer
+            .push_delta(
+                "call-1".to_string(),
+                "*** Begin Patch\n*** Environment ID: remote\n"
+            )
+            .is_none()
+    );
+
+    let event = consumer
+        .push_delta("call-1".to_string(), "*** Add File: hello.txt\n+hello")
+        .expect("progress event");
+    assert_eq!(
+        (event.call_id, event.changes),
+        (
+            "call-1".to_string(),
+            HashMap::from([(
+                PathBuf::from("hello.txt"),
+                FileChange::Add {
+                    content: String::new(),
+                },
+            )]),
+        )
+    );
+
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), "\n*** End Patch")
+            .is_none()
+    );
+    let event = consumer
+        .finish_update_on_complete()
+        .expect("finish parser")
+        .expect("progress event");
+    assert_eq!(
+        event.changes,
+        HashMap::from([(
+            PathBuf::from("hello.txt"),
+            FileChange::Add {
+                content: "hello\n".to_string(),
+            },
+        )])
     );
 }
 

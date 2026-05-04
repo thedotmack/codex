@@ -1,5 +1,6 @@
-start: begin_patch hunk+ end_patch
+start: begin_patch environment? hunk+ end_patch
 begin_patch: "*** Begin Patch" LF
+environment: "*** Environment ID: " environment_id LF
 end_patch: "*** End Patch" LF?
 
 hunk: add_hunk | delete_hunk | update_hunk
@@ -8,6 +9,7 @@ delete_hunk: "*** Delete File: " filename LF
 update_hunk: "*** Update File: " filename LF change_move? change?
 
 filename: /(.+)/
+environment_id: /(.+)/
 add_line: "+" /(.*)/ LF -> line
 
 change_move: "*** Move to: " filename LF
