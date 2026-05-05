@@ -13,7 +13,9 @@ use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
 use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
-use crate::shell::get_shell_by_model_provided_path;
+use crate::shell::ShellType;
+use crate::shell::empty_shell_snapshot_receiver;
+use crate::shell_detect::detect_shell_type;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -27,6 +29,7 @@ use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
 use crate::tools::handlers::resolve_environment_target;
+use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::PostToolUsePayload;
@@ -579,11 +582,15 @@ impl ToolHandler for ShellCommandHandler {
         )
         .await;
         let prefix_rule = params.prefix_rule.clone();
-        let environment_shell = turn_environment
-            .environment
-            .is_remote()
-            .then(|| get_shell_by_model_provided_path(&PathBuf::from(&turn_environment.shell)));
         let session_shell = session.user_shell();
+        let environment_shell = turn_environment.environment.is_remote().then(|| {
+            let shell_path = PathBuf::from(&turn_environment.shell);
+            Shell {
+                shell_type: detect_shell_type(&shell_path).unwrap_or(ShellType::Sh),
+                shell_path,
+                shell_snapshot: empty_shell_snapshot_receiver(),
+            }
+        });
         let shell = environment_shell
             .as_ref()
             .unwrap_or_else(|| session_shell.as_ref());
