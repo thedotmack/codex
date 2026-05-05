@@ -1,4 +1,33 @@
-use super::*;
+use codex_protocol::approvals::ExecPolicyAmendment as CoreExecPolicyAmendment;
+use codex_protocol::approvals::NetworkApprovalContext as CoreNetworkApprovalContext;
+use codex_protocol::approvals::NetworkApprovalProtocol as CoreNetworkApprovalProtocol;
+use codex_protocol::approvals::NetworkPolicyAmendment as CoreNetworkPolicyAmendment;
+use codex_protocol::approvals::NetworkPolicyRuleAction as CoreNetworkPolicyRuleAction;
+use codex_protocol::models::ActivePermissionProfile as CoreActivePermissionProfile;
+use codex_protocol::models::ActivePermissionProfileModification as CoreActivePermissionProfileModification;
+use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
+use codex_protocol::models::FileSystemPermissions as CoreFileSystemPermissions;
+use codex_protocol::models::ManagedFileSystemPermissions as CoreManagedFileSystemPermissions;
+use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
+use codex_protocol::models::PermissionProfile as CorePermissionProfile;
+use codex_protocol::parse_command::ParsedCommand as CoreParsedCommand;
+use codex_protocol::permissions::FileSystemAccessMode as CoreFileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath as CoreFileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry as CoreFileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSpecialPath as CoreFileSystemSpecialPath;
+use codex_protocol::permissions::NetworkSandboxPolicy as CoreNetworkSandboxPolicy;
+use codex_protocol::protocol::NetworkAccess as CoreNetworkAccess;
+use codex_protocol::protocol::ReviewDecision as CoreReviewDecision;
+use codex_protocol::protocol::SessionSource as CoreSessionSource;
+use codex_protocol::protocol::SubAgentSource as CoreSubAgentSource;
+use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

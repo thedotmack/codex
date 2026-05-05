@@ -1,4 +1,24 @@
-use super::*;
+use super::ApprovalsReviewer;
+use super::AskForApproval;
+use super::SandboxMode;
+use super::shared::default_enabled;
+use codex_experimental_api_macros::ExperimentalApi;
+use codex_protocol::config_types::ForcedLoginMethod;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::ServiceTier;
+use codex_protocol::config_types::Verbosity;
+use codex_protocol::config_types::WebSearchMode;
+use codex_protocol::config_types::WebSearchToolConfig;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -244,10 +264,6 @@ pub struct AppsConfig {
     pub default: Option<AppsDefaultConfig>,
     #[serde(default, flatten)]
     pub apps: HashMap<String, AppConfig>,
-}
-
-const fn default_enabled() -> bool {
-    true
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]

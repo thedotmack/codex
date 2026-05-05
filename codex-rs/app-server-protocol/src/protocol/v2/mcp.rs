@@ -1,4 +1,17 @@
-use super::*;
+use super::McpAuthStatus;
+use super::McpToolCallError;
+use super::McpToolCallResult;
+use codex_protocol::items::McpToolCallError as CoreMcpToolCallError;
+use codex_protocol::mcp::CallToolResult as CoreMcpCallToolResult;
+use codex_protocol::mcp::Resource as McpResource;
+pub use codex_protocol::mcp::ResourceContent as McpResourceContent;
+use codex_protocol::mcp::ResourceTemplate as McpResourceTemplate;
+use codex_protocol::mcp::Tool as McpTool;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

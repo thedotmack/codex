@@ -1,4 +1,68 @@
-use super::*;
+use codex_experimental_api_macros::ExperimentalApi;
+use codex_protocol::config_types::ApprovalsReviewer as CoreApprovalsReviewer;
+use codex_protocol::config_types::SandboxMode as CoreSandboxMode;
+use codex_protocol::protocol::AskForApproval as CoreAskForApproval;
+use codex_protocol::protocol::CodexErrorInfo as CoreCodexErrorInfo;
+use codex_protocol::protocol::GranularApprovalConfig as CoreGranularApprovalConfig;
+use codex_protocol::protocol::HookEventName as CoreHookEventName;
+use codex_protocol::protocol::HookExecutionMode as CoreHookExecutionMode;
+use codex_protocol::protocol::HookHandlerType as CoreHookHandlerType;
+use codex_protocol::protocol::HookOutputEntry as CoreHookOutputEntry;
+use codex_protocol::protocol::HookOutputEntryKind as CoreHookOutputEntryKind;
+use codex_protocol::protocol::HookRunStatus as CoreHookRunStatus;
+use codex_protocol::protocol::HookRunSummary as CoreHookRunSummary;
+use codex_protocol::protocol::HookScope as CoreHookScope;
+use codex_protocol::protocol::HookSource as CoreHookSource;
+use codex_protocol::protocol::HookTrustStatus as CoreHookTrustStatus;
+use codex_protocol::protocol::ModelRerouteReason as CoreModelRerouteReason;
+use codex_protocol::protocol::ModelVerification as CoreModelVerification;
+use codex_protocol::protocol::NonSteerableTurnKind as CoreNonSteerableTurnKind;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use schemars::r#gen::SchemaGenerator;
+use schemars::schema::InstanceType;
+use schemars::schema::Metadata;
+use schemars::schema::Schema;
+use schemars::schema::SchemaObject;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use ts_rs::TS;
+
+// Macro to declare a camelCased API v2 enum mirroring a core enum which
+// tends to use either snake_case or kebab-case.
+macro_rules! v2_enum_from_core {
+    (
+        $(#[$enum_meta:meta])*
+        pub enum $Name:ident from $Src:path {
+            $( $(#[$variant_meta:meta])* $Variant:ident ),+ $(,)?
+        }
+    ) => {
+        #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+        $(#[$enum_meta])*
+        #[serde(rename_all = "camelCase")]
+        #[ts(export_to = "v2/")]
+        pub enum $Name {
+            $( $(#[$variant_meta])* $Variant ),+
+        }
+
+        impl $Name {
+            pub fn to_core(self) -> $Src {
+                match self { $( $Name::$Variant => <$Src>::$Variant ),+ }
+            }
+        }
+
+        impl From<$Src> for $Name {
+            fn from(value: $Src) -> Self {
+                match value { $( <$Src>::$Variant => $Name::$Variant ),+ }
+            }
+        }
+    };
+}
+
+pub(super) const fn default_enabled() -> bool {
+    true
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

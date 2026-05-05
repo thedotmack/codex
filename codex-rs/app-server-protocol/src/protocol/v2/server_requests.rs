@@ -1,4 +1,25 @@
-use super::*;
+use super::AdditionalPermissionProfile;
+use super::CommandAction;
+use super::CommandExecutionApprovalDecision;
+use super::ExecPolicyAmendment;
+use super::FileChangeApprovalDecision;
+use super::GrantedPermissionProfile;
+use super::NetworkApprovalContext;
+use super::NetworkPolicyAmendment;
+use super::RequestPermissionProfile;
+use crate::RequestId;
+use codex_experimental_api_macros::ExperimentalApi;
+use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
+use codex_protocol::request_permissions::PermissionGrantScope as CorePermissionGrantScope;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]

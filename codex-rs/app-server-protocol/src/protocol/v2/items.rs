@@ -1,4 +1,34 @@
-use super::*;
+use super::CommandAction;
+use super::DynamicToolCallOutputContentItem;
+use super::MemoryCitation;
+use super::NetworkApprovalProtocol;
+use super::RequestPermissionProfile;
+use super::UserInput;
+use crate::protocol::item_builders::convert_patch_changes;
+use codex_protocol::approvals::GuardianAssessmentAction as CoreGuardianAssessmentAction;
+use codex_protocol::approvals::GuardianAssessmentDecisionSource as CoreGuardianAssessmentDecisionSource;
+use codex_protocol::approvals::GuardianCommandSource as CoreGuardianCommandSource;
+use codex_protocol::items::AgentMessageContent as CoreAgentMessageContent;
+use codex_protocol::items::McpToolCallStatus as CoreMcpToolCallStatus;
+use codex_protocol::items::TurnItem as CoreTurnItem;
+use codex_protocol::models::MessagePhase;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::protocol::AgentStatus as CoreAgentStatus;
+use codex_protocol::protocol::ExecCommandSource as CoreExecCommandSource;
+use codex_protocol::protocol::ExecCommandStatus as CoreExecCommandStatus;
+use codex_protocol::protocol::GuardianRiskLevel as CoreGuardianRiskLevel;
+use codex_protocol::protocol::GuardianUserAuthorization as CoreGuardianUserAuthorization;
+use codex_protocol::protocol::PatchApplyStatus as CorePatchApplyStatus;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use serde_with::serde_as;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]

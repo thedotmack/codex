@@ -1,4 +1,15 @@
-use super::*;
+use super::ModelRerouteReason;
+use super::ModelVerification;
+use codex_protocol::config_types::CollaborationModeMask as CoreCollaborationModeMask;
+use codex_protocol::config_types::ModeKind;
+use codex_protocol::openai_models::InputModality;
+use codex_protocol::openai_models::ModelAvailabilityNux as CoreModelAvailabilityNux;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::default_input_modalities;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

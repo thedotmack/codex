@@ -1,4 +1,7 @@
-use super::*;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use ts_rs::TS;
 
 /// Device-key algorithm reported at enrollment and signing boundaries.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
