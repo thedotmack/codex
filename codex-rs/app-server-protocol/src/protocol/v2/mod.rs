@@ -179,6 +179,7 @@ mod shared;
 mod thread;
 mod thread_data;
 mod turn;
+mod windows_sandbox;
 
 pub use account::*;
 pub use apps::*;
@@ -200,6 +201,7 @@ pub use shared::*;
 pub use thread::*;
 pub use thread_data::*;
 pub use turn::*;
+pub use windows_sandbox::*;
 
 #[cfg(test)]
 mod tests {

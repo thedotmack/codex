@@ -223,3 +223,140 @@ pub struct GetAccountResponse {
     pub account: Option<Account>,
     pub requires_openai_auth: bool,
 }
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct AccountRateLimitsUpdatedNotification {
+    pub rate_limits: RateLimitSnapshot,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct RateLimitSnapshot {
+    pub limit_id: Option<String>,
+    pub limit_name: Option<String>,
+    pub primary: Option<RateLimitWindow>,
+    pub secondary: Option<RateLimitWindow>,
+    pub credits: Option<CreditsSnapshot>,
+    pub plan_type: Option<PlanType>,
+    pub rate_limit_reached_type: Option<RateLimitReachedType>,
+}
+
+impl From<CoreRateLimitSnapshot> for RateLimitSnapshot {
+    fn from(value: CoreRateLimitSnapshot) -> Self {
+        Self {
+            limit_id: value.limit_id,
+            limit_name: value.limit_name,
+            primary: value.primary.map(RateLimitWindow::from),
+            secondary: value.secondary.map(RateLimitWindow::from),
+            credits: value.credits.map(CreditsSnapshot::from),
+            plan_type: value.plan_type,
+            rate_limit_reached_type: value
+                .rate_limit_reached_type
+                .map(RateLimitReachedType::from),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/", rename_all = "snake_case")]
+pub enum RateLimitReachedType {
+    RateLimitReached,
+    WorkspaceOwnerCreditsDepleted,
+    WorkspaceMemberCreditsDepleted,
+    WorkspaceOwnerUsageLimitReached,
+    WorkspaceMemberUsageLimitReached,
+}
+
+impl From<CoreRateLimitReachedType> for RateLimitReachedType {
+    fn from(value: CoreRateLimitReachedType) -> Self {
+        match value {
+            CoreRateLimitReachedType::RateLimitReached => Self::RateLimitReached,
+            CoreRateLimitReachedType::WorkspaceOwnerCreditsDepleted => {
+                Self::WorkspaceOwnerCreditsDepleted
+            }
+            CoreRateLimitReachedType::WorkspaceMemberCreditsDepleted => {
+                Self::WorkspaceMemberCreditsDepleted
+            }
+            CoreRateLimitReachedType::WorkspaceOwnerUsageLimitReached => {
+                Self::WorkspaceOwnerUsageLimitReached
+            }
+            CoreRateLimitReachedType::WorkspaceMemberUsageLimitReached => {
+                Self::WorkspaceMemberUsageLimitReached
+            }
+        }
+    }
+}
+
+impl From<RateLimitReachedType> for CoreRateLimitReachedType {
+    fn from(value: RateLimitReachedType) -> Self {
+        match value {
+            RateLimitReachedType::RateLimitReached => Self::RateLimitReached,
+            RateLimitReachedType::WorkspaceOwnerCreditsDepleted => {
+                Self::WorkspaceOwnerCreditsDepleted
+            }
+            RateLimitReachedType::WorkspaceMemberCreditsDepleted => {
+                Self::WorkspaceMemberCreditsDepleted
+            }
+            RateLimitReachedType::WorkspaceOwnerUsageLimitReached => {
+                Self::WorkspaceOwnerUsageLimitReached
+            }
+            RateLimitReachedType::WorkspaceMemberUsageLimitReached => {
+                Self::WorkspaceMemberUsageLimitReached
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct RateLimitWindow {
+    pub used_percent: i32,
+    #[ts(type = "number | null")]
+    pub window_duration_mins: Option<i64>,
+    #[ts(type = "number | null")]
+    pub resets_at: Option<i64>,
+}
+
+impl From<CoreRateLimitWindow> for RateLimitWindow {
+    fn from(value: CoreRateLimitWindow) -> Self {
+        Self {
+            used_percent: value.used_percent.round() as i32,
+            window_duration_mins: value.window_minutes,
+            resets_at: value.resets_at,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct CreditsSnapshot {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<String>,
+}
+
+impl From<CoreCreditsSnapshot> for CreditsSnapshot {
+    fn from(value: CoreCreditsSnapshot) -> Self {
+        Self {
+            has_credits: value.has_credits,
+            unlimited: value.unlimited,
+            balance: value.balance,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct AccountLoginCompletedNotification {
+    // Use plain String for identifiers to avoid TS/JSON Schema quirks around uuid-specific types.
+    // Convert to/from UUIDs at the application layer as needed.
+    pub login_id: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
+}
