@@ -706,7 +706,7 @@ impl ShellHandler {
         }
 
         // Intercept apply_patch if present.
-        let apply_patch_sandbox = target_environment.is_remote().then(|| {
+        let apply_patch_sandbox = environment.is_remote().then(|| {
             turn.file_system_sandbox_context_for_cwd(
                 &exec_params.cwd,
                 /*additional_permissions*/ None,
@@ -715,7 +715,7 @@ impl ShellHandler {
         if let Some(output) = intercept_apply_patch(
             &exec_params.command,
             &exec_params.cwd,
-            target_environment.clone(),
+            environment.clone(),
             fs.clone(),
             apply_patch_sandbox,
             session.clone(),

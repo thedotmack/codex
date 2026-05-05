@@ -19,7 +19,6 @@ use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::with_cached_approval;
 use codex_apply_patch::ApplyPatchAction;
 use codex_exec_server::Environment;
-use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::SandboxErr;
@@ -41,7 +40,6 @@ use std::time::Instant;
 pub struct ApplyPatchRequest {
     pub action: ApplyPatchAction,
     pub environment: Arc<Environment>,
-    pub file_system: Arc<dyn ExecutorFileSystem>,
     pub file_paths: Vec<AbsolutePathBuf>,
     pub changes: std::collections::HashMap<PathBuf, FileChange>,
     pub exec_approval_requirement: ExecApprovalRequirement,
@@ -220,7 +218,7 @@ impl ToolRuntime<ApplyPatchRequest, ExecToolCallOutput> for ApplyPatchRuntime {
         _ctx: &ToolCtx,
     ) -> Result<ExecToolCallOutput, ToolError> {
         let started_at = Instant::now();
-        let fs = req.file_system.clone();
+        let fs = req.environment.get_filesystem();
         let sandbox = Self::file_system_sandbox_context_for_attempt(req, attempt);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

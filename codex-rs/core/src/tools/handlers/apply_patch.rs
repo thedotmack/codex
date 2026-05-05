@@ -22,7 +22,6 @@ use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::parse_arguments;
-use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::PostToolUsePayload;
@@ -62,14 +61,38 @@ struct ApplyPatchArgumentDiffConsumer {
     parser: StreamingPatchParser,
     last_sent_at: Option<Instant>,
     pending: Option<PatchApplyUpdatedEvent>,
-    metadata_buffer: String,
-    metadata_processed: bool,
+    metadata_stripper: ApplyPatchMetadataStripper,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct ApplyPatchInput {
+struct ResolvedApplyPatchInput {
     patch: String,
     environment_id: Option<String>,
+}
+
+struct ApplyPatchMetadataStripper {
+    state: ApplyPatchMetadataStripperState,
+}
+
+enum ApplyPatchMetadataStripperState {
+    // Freeform apply_patch may start with an optional `*** Environment ID: ...`
+    // line. Streaming diffs can split that prefix across chunks, so we buffer
+    // only until we can decide whether to strip metadata or pass the bytes
+    // through to the patch parser unchanged.
+    //
+    // `Prefix` owns that short-lived buffer. Once we either strip the metadata
+    // line or determine there is no metadata to strip, we switch to
+    // `Passthrough` and stop doing any special-case parsing for later chunks.
+    Prefix(String),
+    Passthrough,
+}
+
+impl Default for ApplyPatchMetadataStripper {
+    fn default() -> Self {
+        Self {
+            state: ApplyPatchMetadataStripperState::Prefix(String::new()),
+        }
+    }
 }
 
 impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
@@ -94,43 +117,8 @@ impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
 }
 
 impl ApplyPatchArgumentDiffConsumer {
-    fn strip_environment_metadata_delta(&mut self, delta: &str) -> Option<String> {
-        if self.metadata_processed {
-            return Some(delta.to_string());
-        }
-
-        self.metadata_buffer.push_str(delta);
-        let buffer = self.metadata_buffer.as_str();
-        if !APPLY_PATCH_BEGIN_MARKER.starts_with(buffer)
-            && !buffer.starts_with(APPLY_PATCH_BEGIN_MARKER)
-        {
-            self.metadata_processed = true;
-            return Some(std::mem::take(&mut self.metadata_buffer));
-        }
-
-        let Some(rest) = buffer.strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
-            return None;
-        };
-        if rest.is_empty() || APPLY_PATCH_ENVIRONMENT_ID_MARKER.starts_with(rest) {
-            return None;
-        }
-
-        if let Some(after_marker) = rest.strip_prefix(APPLY_PATCH_ENVIRONMENT_ID_MARKER) {
-            let Some((_environment_id, patch_rest)) = after_marker.split_once('\n') else {
-                return None;
-            };
-            self.metadata_processed = true;
-            let patch = format!("{APPLY_PATCH_BEGIN_MARKER}{patch_rest}");
-            self.metadata_buffer.clear();
-            return Some(patch);
-        }
-
-        self.metadata_processed = true;
-        Some(std::mem::take(&mut self.metadata_buffer))
-    }
-
     fn push_delta(&mut self, call_id: String, delta: &str) -> Option<PatchApplyUpdatedEvent> {
-        let delta = self.strip_environment_metadata_delta(delta)?;
+        let delta = self.metadata_stripper.push(delta)?;
         let hunks = self.parser.push_delta(&delta).ok()?;
         if hunks.is_empty() {
             return None;
@@ -156,9 +144,7 @@ impl ApplyPatchArgumentDiffConsumer {
     fn finish_update_on_complete(
         &mut self,
     ) -> Result<Option<PatchApplyUpdatedEvent>, FunctionCallError> {
-        if !self.metadata_processed {
-            let delta = std::mem::take(&mut self.metadata_buffer);
-            self.metadata_processed = true;
+        if let Some(delta) = self.metadata_stripper.finish()? {
             self.parser.push_delta(&delta).map_err(|err| {
                 FunctionCallError::RespondToModel(format!("failed to parse apply_patch: {err}"))
             })?;
@@ -175,15 +161,63 @@ impl ApplyPatchArgumentDiffConsumer {
     }
 }
 
-fn parse_apply_patch_input(input: String) -> Result<ApplyPatchInput, FunctionCallError> {
+impl ApplyPatchMetadataStripper {
+    fn push(&mut self, delta: &str) -> Option<String> {
+        let ApplyPatchMetadataStripperState::Prefix(buffer) = &mut self.state else {
+            return Some(delta.to_string());
+        };
+
+        buffer.push_str(delta);
+        if !APPLY_PATCH_BEGIN_MARKER.starts_with(buffer.as_str())
+            && !buffer.starts_with(APPLY_PATCH_BEGIN_MARKER)
+        {
+            let buffered = std::mem::take(buffer);
+            self.state = ApplyPatchMetadataStripperState::Passthrough;
+            return Some(buffered);
+        }
+
+        let Some(rest) = buffer.as_str().strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
+            return None;
+        };
+        if rest.is_empty() || APPLY_PATCH_ENVIRONMENT_ID_MARKER.starts_with(rest) {
+            return None;
+        }
+
+        if let Some(after_marker) = rest.strip_prefix(APPLY_PATCH_ENVIRONMENT_ID_MARKER) {
+            let Some((_environment_id, patch_rest)) = after_marker.split_once('\n') else {
+                return None;
+            };
+            let patch = format!("{APPLY_PATCH_BEGIN_MARKER}{patch_rest}");
+            self.state = ApplyPatchMetadataStripperState::Passthrough;
+            return Some(patch);
+        }
+        let buffered = std::mem::take(buffer);
+        self.state = ApplyPatchMetadataStripperState::Passthrough;
+        Some(buffered)
+    }
+
+    fn finish(&mut self) -> Result<Option<String>, FunctionCallError> {
+        match std::mem::replace(
+            &mut self.state,
+            ApplyPatchMetadataStripperState::Passthrough,
+        ) {
+            ApplyPatchMetadataStripperState::Prefix(buffer) => Ok(Some(buffer)),
+            ApplyPatchMetadataStripperState::Passthrough => Ok(None),
+        }
+    }
+}
+
+fn parse_freeform_apply_patch_input(
+    input: String,
+) -> Result<ResolvedApplyPatchInput, FunctionCallError> {
     let Some(rest) = input.strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
-        return Ok(ApplyPatchInput {
+        return Ok(ResolvedApplyPatchInput {
             patch: input,
             environment_id: None,
         });
     };
     let Some(after_marker) = rest.strip_prefix(APPLY_PATCH_ENVIRONMENT_ID_MARKER) else {
-        return Ok(ApplyPatchInput {
+        return Ok(ResolvedApplyPatchInput {
             patch: input,
             environment_id: None,
         });
@@ -198,10 +232,60 @@ fn parse_apply_patch_input(input: String) -> Result<ApplyPatchInput, FunctionCal
             "environment_id cannot be empty".to_string(),
         ));
     }
-    Ok(ApplyPatchInput {
+    Ok(ResolvedApplyPatchInput {
         patch: format!("{APPLY_PATCH_BEGIN_MARKER}{patch_rest}"),
         environment_id: Some(environment_id.to_string()),
     })
+}
+
+fn merge_apply_patch_environment_ids(
+    argument_environment_id: Option<String>,
+    metadata_environment_id: Option<String>,
+) -> Result<Option<String>, FunctionCallError> {
+    match (argument_environment_id, metadata_environment_id) {
+        (Some(argument_environment_id), Some(metadata_environment_id))
+            if argument_environment_id != metadata_environment_id =>
+        {
+            Err(FunctionCallError::RespondToModel(
+                "apply_patch environment_id argument conflicts with patch environment metadata"
+                    .to_string(),
+            ))
+        }
+        (Some(argument_environment_id), _) => Ok(Some(argument_environment_id)),
+        (None, metadata_environment_id) => Ok(metadata_environment_id),
+    }
+}
+
+fn parse_function_apply_patch_input(
+    arguments: &str,
+) -> Result<ResolvedApplyPatchInput, FunctionCallError> {
+    let args: ApplyPatchToolArgs = parse_arguments(arguments)?;
+    let parsed_input = parse_freeform_apply_patch_input(args.input)?;
+    let environment_id =
+        merge_apply_patch_environment_ids(args.environment_id, parsed_input.environment_id)?;
+    Ok(ResolvedApplyPatchInput {
+        patch: parsed_input.patch,
+        environment_id,
+    })
+}
+
+/// Normalizes both apply_patch payload shapes into one resolved request.
+///
+/// Backward compatibility:
+/// - legacy apply_patch calls omit environment selection entirely
+/// - those continue to target the primary environment
+/// - routing only changes when an environment id is explicitly provided, either
+///   as a function argument or as freeform patch metadata
+fn resolve_apply_patch_input(
+    payload: ToolPayload,
+) -> Result<ResolvedApplyPatchInput, FunctionCallError> {
+    match payload {
+        ToolPayload::Function { arguments } => parse_function_apply_patch_input(&arguments),
+        ToolPayload::Custom { input } => parse_freeform_apply_patch_input(input),
+        _ => Err(FunctionCallError::RespondToModel(
+            "apply_patch handler received unsupported payload".to_string(),
+        )),
+    }
 }
 
 fn convert_apply_patch_hunks_to_protocol(hunks: &[Hunk]) -> HashMap<PathBuf, FileChange> {
@@ -435,38 +519,16 @@ impl ToolHandler for ApplyPatchHandler {
             ..
         } = invocation;
 
-        let (patch_input, argument_environment_id) = match payload {
-            ToolPayload::Function { arguments } => {
-                let args: ApplyPatchToolArgs = parse_arguments(&arguments)?;
-                (args.input, args.environment_id)
-            }
-            ToolPayload::Custom { input } => (input, None),
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "apply_patch handler received unsupported payload".to_string(),
-                ));
-            }
-        };
-        let ApplyPatchInput {
+        let ResolvedApplyPatchInput {
             patch: patch_input,
-            environment_id: metadata_environment_id,
-        } = parse_apply_patch_input(patch_input)?;
-        let environment_id = match (argument_environment_id, metadata_environment_id) {
-            (Some(argument_environment_id), Some(metadata_environment_id))
-                if argument_environment_id != metadata_environment_id =>
-            {
-                return Err(FunctionCallError::RespondToModel(
-                    "apply_patch environment_id argument conflicts with patch environment metadata"
-                        .to_string(),
-                ));
-            }
-            (Some(argument_environment_id), _) => Some(argument_environment_id),
-            (None, metadata_environment_id) => metadata_environment_id,
-        };
+            environment_id,
+        } = resolve_apply_patch_input(payload)?;
         // Re-parse and verify the patch so we can compute changes and approval.
         // Avoid building temporary ExecParams/command vectors; derive directly from inputs.
-        let Some(target_environment) =
-            resolve_tool_environment(turn.as_ref(), environment_id.as_deref())?
+        let Some(target_environment) = turn
+            .environments
+            .get_or_primary(environment_id.as_deref())
+            .cloned()
         else {
             return Err(FunctionCallError::RespondToModel(
                 "apply_patch is unavailable in this session".to_string(),
@@ -518,7 +580,6 @@ impl ToolHandler for ApplyPatchHandler {
                         let req = ApplyPatchRequest {
                             action: apply.action,
                             environment: Arc::clone(&environment),
-                            file_system: fs.clone(),
                             file_paths,
                             changes,
                             exec_approval_requirement: apply.exec_approval_requirement,
@@ -636,7 +697,6 @@ pub(crate) async fn intercept_apply_patch(
                     let req = ApplyPatchRequest {
                         action: apply.action,
                         environment,
-                        file_system: fs.clone(),
                         file_paths: approval_keys,
                         changes,
                         exec_approval_requirement: apply.exec_approval_requirement,

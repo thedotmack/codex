@@ -77,7 +77,7 @@ fn create_apply_patch_json_tool_with_environment_id_matches_expected_spec() {
                     (
                         "environment_id".to_string(),
                         JsonSchema::string(Some(
-                            "Optional environment id from the <environment_context> block. If omitted, uses the primary environment.".to_string(),
+                            "Optional selected environment id to target. Omit this to use the primary environment.".to_string(),
                         ),),
                     ),
                     (

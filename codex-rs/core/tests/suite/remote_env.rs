@@ -593,6 +593,103 @@ async fn freeform_apply_patch_routes_to_selected_remote_environment() -> Result<
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn function_apply_patch_routes_to_selected_remote_environment() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let Some(_remote_env) = get_remote_test_env() else {
+        return Ok(());
+    };
+
+    let server = start_mock_server().await;
+    let test = apply_patch_test(&server).await?;
+    let local_cwd = TempDir::new()?;
+    let local_selection = TurnEnvironmentSelection {
+        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd: local_cwd.path().abs(),
+    };
+    let remote_cwd = PathBuf::from(format!(
+        "/tmp/codex-apply-patch-function-routing-{}",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    ))
+    .abs();
+    test.fs()
+        .create_directory(
+            &remote_cwd,
+            CreateDirectoryOptions { recursive: true },
+            /*sandbox*/ None,
+        )
+        .await?;
+    let remote_selection = TurnEnvironmentSelection {
+        environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+        cwd: remote_cwd.clone(),
+    };
+    let file_name = format!(
+        "codex-apply-patch-function-remote-{}.txt",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    );
+    let patch = format!(
+        "*** Begin Patch\n*** Add File: {file_name}\n+remote-function-apply-patch\n*** End Patch"
+    );
+    let call_id = "call-apply-patch-function-remote-env";
+    let arguments = json!({
+        "input": patch,
+        "environment_id": REMOTE_ENVIRONMENT_ID,
+    });
+    let response_mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-apply-patch-function-1"),
+                ev_function_call(call_id, "apply_patch", &serde_json::to_string(&arguments)?),
+                ev_completed("resp-apply-patch-function-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-apply-patch-function-2"),
+                ev_assistant_message("msg-apply-patch-function-1", "done"),
+                ev_completed("resp-apply-patch-function-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn_with_environments(
+        "route function apply_patch",
+        Some(vec![local_selection, remote_selection]),
+    )
+    .await?;
+
+    let output = response_mock
+        .last_request()
+        .with_context(|| format!("missing request containing apply_patch output for {call_id}"))?
+        .function_call_output(call_id);
+    assert!(
+        output
+            .get("output")
+            .and_then(Value::as_str)
+            .is_some_and(|output| output.contains("Success")),
+        "unexpected apply_patch output: {output:?}",
+    );
+    let remote_contents = test
+        .fs()
+        .read_file(&remote_cwd.join(&file_name), /*sandbox*/ None)
+        .await?;
+    assert_eq!(remote_contents, b"remote-function-apply-patch\n");
+    assert!(!local_cwd.path().join(&file_name).exists());
+
+    test.fs()
+        .remove(
+            &remote_cwd,
+            RemoveOptions {
+                recursive: true,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_timeout_in_selected_remote_environment() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let Some(_remote_env) = get_remote_test_env() else {

@@ -46,6 +46,49 @@ fn sample_patch_with_selected_environment_id() -> &'static str {
 *** End Patch"#
 }
 
+#[derive(Clone, Copy)]
+enum ExpectedEnvironment {
+    Primary,
+    Selected,
+}
+
+async fn assert_apply_patch_payload_resolves_cwd(
+    payload: ToolPayload,
+    expected_environment: ExpectedEnvironment,
+) {
+    let tmp = TempDir::new().expect("tmp");
+    let primary_cwd = tmp.path().join("primary").abs();
+    let selected_cwd = tmp.path().join("selected").abs();
+    std::fs::create_dir_all(primary_cwd.as_path()).expect("create primary cwd");
+    std::fs::create_dir_all(selected_cwd.as_path()).expect("create selected cwd");
+    let (_session, mut turn) = make_session_and_context().await;
+    set_two_local_turn_environments(&mut turn, primary_cwd.clone(), selected_cwd.clone());
+    let ResolvedApplyPatchInput {
+        patch,
+        environment_id,
+    } = resolve_apply_patch_input(payload).expect("apply_patch payload should parse");
+    let turn_environment = turn
+        .environments
+        .get_or_primary(environment_id.as_deref())
+        .expect("environment should resolve");
+    let command = vec!["apply_patch".to_string(), patch];
+    let maybe_verified = codex_apply_patch::maybe_parse_apply_patch_verified(
+        &command,
+        &turn_environment.cwd,
+        turn_environment.environment.get_filesystem().as_ref(),
+        /*sandbox*/ None,
+    )
+    .await;
+    let codex_apply_patch::MaybeApplyPatchVerified::Body(changes) = maybe_verified else {
+        panic!("expected verified apply_patch body");
+    };
+    let expected_cwd = match expected_environment {
+        ExpectedEnvironment::Primary => &primary_cwd,
+        ExpectedEnvironment::Selected => &selected_cwd,
+    };
+    assert_eq!(&changes.cwd, expected_cwd);
+}
+
 async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
     let (session, turn) = make_session_and_context().await;
     invocation_for_session_turn(session, turn, payload)
@@ -152,14 +195,6 @@ async fn post_tool_use_payload_uses_patch_input_and_tool_output() {
 
 #[tokio::test]
 async fn json_apply_patch_uses_selected_environment_cwd() {
-    let tmp = TempDir::new().expect("tmp");
-    let primary_cwd = tmp.path().join("primary").abs();
-    let selected_cwd = tmp.path().join("selected").abs();
-    std::fs::create_dir_all(primary_cwd.as_path()).expect("create primary cwd");
-    std::fs::create_dir_all(selected_cwd.as_path()).expect("create selected cwd");
-    let (session, mut turn) = make_session_and_context().await;
-    set_two_local_turn_environments(&mut turn, primary_cwd.clone(), selected_cwd.clone());
-
     let payload = ToolPayload::Function {
         arguments: json!({
             "input": sample_patch(),
@@ -167,53 +202,21 @@ async fn json_apply_patch_uses_selected_environment_cwd() {
         })
         .to_string(),
     };
-    let invocation = invocation_for_session_turn(session, turn, payload);
-
-    ApplyPatchHandler
-        .handle(invocation)
-        .await
-        .expect("apply_patch should succeed");
-
-    assert_eq!(
-        std::fs::read_to_string(selected_cwd.join("hello.txt").as_path())
-            .expect("selected environment file should be written"),
-        "hello\n"
-    );
-    assert!(!primary_cwd.join("hello.txt").as_path().exists());
+    assert_apply_patch_payload_resolves_cwd(payload, ExpectedEnvironment::Selected).await;
 }
 
 #[tokio::test]
 async fn freeform_apply_patch_uses_selected_environment_metadata_cwd() {
-    let tmp = TempDir::new().expect("tmp");
-    let primary_cwd = tmp.path().join("primary").abs();
-    let selected_cwd = tmp.path().join("selected").abs();
-    std::fs::create_dir_all(primary_cwd.as_path()).expect("create primary cwd");
-    std::fs::create_dir_all(selected_cwd.as_path()).expect("create selected cwd");
-    let (session, mut turn) = make_session_and_context().await;
-    set_two_local_turn_environments(&mut turn, primary_cwd.clone(), selected_cwd.clone());
-
     let payload = ToolPayload::Custom {
         input: sample_patch_with_selected_environment_id().to_string(),
     };
-    let invocation = invocation_for_session_turn(session, turn, payload);
-
-    ApplyPatchHandler
-        .handle(invocation)
-        .await
-        .expect("apply_patch should succeed");
-
-    assert_eq!(
-        std::fs::read_to_string(selected_cwd.join("hello.txt").as_path())
-            .expect("selected environment file should be written"),
-        "hello\n"
-    );
-    assert!(!primary_cwd.join("hello.txt").as_path().exists());
+    assert_apply_patch_payload_resolves_cwd(payload, ExpectedEnvironment::Selected).await;
 }
 
 #[test]
-fn parse_apply_patch_input_strips_environment_metadata() {
-    let input =
-        parse_apply_patch_input(sample_patch_with_environment_id().to_string()).expect("parse");
+fn parse_freeform_apply_patch_input_strips_environment_metadata() {
+    let input = parse_freeform_apply_patch_input(sample_patch_with_environment_id().to_string())
+        .expect("parse");
 
     assert_eq!(
         (input.environment_id, input.patch),
@@ -222,8 +225,8 @@ fn parse_apply_patch_input_strips_environment_metadata() {
 }
 
 #[test]
-fn parse_apply_patch_input_rejects_empty_environment_metadata() {
-    let err = parse_apply_patch_input(
+fn parse_freeform_apply_patch_input_rejects_empty_environment_metadata() {
+    let err = parse_freeform_apply_patch_input(
         "*** Begin Patch\n*** Environment ID: \n*** Add File: hello.txt\n+hello\n*** End Patch"
             .to_string(),
     )
@@ -233,6 +236,65 @@ fn parse_apply_patch_input_rejects_empty_environment_metadata() {
         err.to_string(),
         "environment_id cannot be empty".to_string()
     );
+}
+
+#[test]
+fn parse_function_apply_patch_input_accepts_matching_metadata_and_argument() {
+    let resolved = parse_function_apply_patch_input(
+        &json!({
+            "input": sample_patch_with_selected_environment_id(),
+            "environment_id": "selected",
+        })
+        .to_string(),
+    )
+    .expect("parse");
+
+    assert_eq!(
+        resolved,
+        ResolvedApplyPatchInput {
+            patch: sample_patch().to_string(),
+            environment_id: Some("selected".to_string()),
+        }
+    );
+}
+
+#[test]
+fn parse_function_apply_patch_input_rejects_conflicting_metadata_and_argument() {
+    let err = parse_function_apply_patch_input(
+        &json!({
+            "input": sample_patch_with_selected_environment_id(),
+            "environment_id": "other",
+        })
+        .to_string(),
+    )
+    .expect_err("conflicting environment ids should fail");
+
+    assert_eq!(
+        err.to_string(),
+        "apply_patch environment_id argument conflicts with patch environment metadata"
+    );
+}
+
+#[tokio::test]
+async fn legacy_json_apply_patch_without_environment_selection_uses_primary_cwd() {
+    assert_apply_patch_payload_resolves_cwd(
+        ToolPayload::Function {
+            arguments: json!({ "input": sample_patch() }).to_string(),
+        },
+        ExpectedEnvironment::Primary,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn legacy_freeform_apply_patch_without_environment_selection_uses_primary_cwd() {
+    assert_apply_patch_payload_resolves_cwd(
+        ToolPayload::Custom {
+            input: sample_patch().to_string(),
+        },
+        ExpectedEnvironment::Primary,
+    )
+    .await;
 }
 
 #[test]
