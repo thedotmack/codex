@@ -35,7 +35,7 @@ use tokio_util::sync::CancellationToken;
 /// and then synthesize `ExecToolCallOutput`.
 pub(super) struct RemoteShellExecutor {
     environment: Arc<Environment>,
-    call_id: String,
+    process_id: String,
     timeout_ms: Option<u64>,
     sandbox: SandboxType,
     stdout_stream: Option<StdoutStream>,
@@ -70,7 +70,7 @@ impl RemoteShellExecutor {
     ) -> Self {
         Self {
             environment: Arc::clone(&req.environment),
-            call_id: ctx.call_id.clone(),
+            process_id: remote_shell_process_id(&ctx.call_id, attempt.sandbox),
             timeout_ms: req.timeout_ms,
             sandbox: exec_env.sandbox,
             stdout_stream: crate::tools::runtimes::shell::ShellRuntime::stdout_stream(ctx),
@@ -82,7 +82,7 @@ impl RemoteShellExecutor {
         let started = self
             .environment
             .get_exec_backend()
-            .start(exec_server_params_for_request(&exec_env, &self.call_id))
+            .start(exec_server_params_for_request(&exec_env, &self.process_id))
             .await
             .map_err(|err| ToolError::Rejected(err.to_string()))?;
         let process = ExecServerRemoteShellProcess {
@@ -225,6 +225,15 @@ fn exec_server_params_for_request(request: &ExecRequest, call_id: &str) -> ExecS
     }
 }
 
+fn remote_shell_process_id(call_id: &str, sandbox: SandboxType) -> String {
+    match sandbox {
+        SandboxType::None => format!("{call_id}:unsandboxed"),
+        SandboxType::MacosSeatbelt => format!("{call_id}:seatbelt"),
+        SandboxType::LinuxSeccomp => format!("{call_id}:seccomp"),
+        SandboxType::WindowsSandbox => format!("{call_id}:windows"),
+    }
+}
+
 fn append_capped(dst: &mut Vec<u8>, src: &[u8]) {
     if dst.len() >= DEFAULT_OUTPUT_BYTES_CAP {
         return;
@@ -350,7 +359,7 @@ mod tests {
     fn test_executor(timeout_ms: Option<u64>) -> RemoteShellExecutor {
         RemoteShellExecutor {
             environment: Arc::new(Environment::default_for_tests()),
-            call_id: "call-1".to_string(),
+            process_id: "call-1".to_string(),
             timeout_ms,
             sandbox: SandboxType::None,
             stdout_stream: None,
@@ -459,7 +468,7 @@ mod tests {
         cancellation.cancel();
         let executor = RemoteShellExecutor {
             environment: Arc::new(Environment::default_for_tests()),
-            call_id: "call-1".to_string(),
+            process_id: "call-1".to_string(),
             timeout_ms: None,
             sandbox: SandboxType::None,
             stdout_stream: None,
@@ -486,7 +495,7 @@ mod tests {
     async fn remote_shell_executor_maps_likely_sandbox_denials() {
         let executor = RemoteShellExecutor {
             environment: Arc::new(Environment::default_for_tests()),
-            call_id: "call-1".to_string(),
+            process_id: "call-1".to_string(),
             timeout_ms: None,
             sandbox: SandboxType::LinuxSeccomp,
             stdout_stream: None,
@@ -568,6 +577,18 @@ mod tests {
                 ("PATH".to_string(), "/sandbox-path".to_string()),
                 ("CODEX_THREAD_ID".to_string(), "thread-1".to_string()),
             ])
+        );
+    }
+
+    #[test]
+    fn remote_shell_process_id_distinguishes_retry_attempts() {
+        assert_eq!(
+            remote_shell_process_id("call-123", SandboxType::MacosSeatbelt),
+            "call-123:seatbelt"
+        );
+        assert_eq!(
+            remote_shell_process_id("call-123", SandboxType::None),
+            "call-123:unsandboxed"
         );
     }
 }

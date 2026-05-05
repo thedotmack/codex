@@ -579,10 +579,17 @@ impl ToolHandler for ShellCommandHandler {
         )
         .await;
         let prefix_rule = params.prefix_rule.clone();
-        let shell = get_shell_by_model_provided_path(&PathBuf::from(&turn_environment.shell));
+        let environment_shell = turn_environment
+            .environment
+            .is_remote()
+            .then(|| get_shell_by_model_provided_path(&PathBuf::from(&turn_environment.shell)));
+        let session_shell = session.user_shell();
+        let shell = environment_shell
+            .as_ref()
+            .unwrap_or_else(|| session_shell.as_ref());
         let exec_params = Self::to_exec_params(
             &params,
-            &shell,
+            shell,
             turn.as_ref(),
             session.conversation_id,
             cwd,
