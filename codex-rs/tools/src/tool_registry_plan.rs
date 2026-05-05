@@ -157,7 +157,7 @@ pub fn build_tool_registry_plan(
             }
             ConfigShellToolType::UnifiedExec => {
                 plan.push_spec(
-                    create_exec_command_tool_with_environment_id(CommandToolOptions {
+                    create_exec_command_tool(CommandToolOptions {
                         allow_login_shell: config.allow_login_shell,
                         exec_permission_approvals_enabled,
                         include_environment_id,
@@ -176,7 +176,7 @@ pub fn build_tool_registry_plan(
             ConfigShellToolType::Disabled => {}
             ConfigShellToolType::ShellCommand => {
                 plan.push_spec(
-                    create_shell_command_tool_with_environment_id(CommandToolOptions {
+                    create_shell_command_tool(CommandToolOptions {
                         allow_login_shell: config.allow_login_shell,
                         exec_permission_approvals_enabled,
                         include_environment_id,
