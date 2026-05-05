@@ -248,7 +248,14 @@ pub(crate) fn create_shell_command_tool_with_environment_id(
             )),
         );
     }
-    maybe_insert_environment_id_parameter(&mut properties, include_environment_id);
+    if include_environment_id {
+        properties.insert(
+            "environment_id".to_string(),
+            JsonSchema::string(Some(
+                "Optional environment id from the <environment_context> block. If omitted, uses the primary environment.".to_string(),
+            )),
+        );
+    }
     properties.extend(create_approval_parameters(
         options.exec_permission_approvals_enabled,
     ));

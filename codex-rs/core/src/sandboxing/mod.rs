@@ -240,15 +240,9 @@ mod tests {
 
         assert_eq!(config.policy.inherit, ShellEnvironmentPolicyInherit::Core);
         assert!(!config.policy.ignore_default_excludes);
-        assert_eq!(
-            config.policy.exclude,
-            vec![EnvironmentVariablePattern::new_case_insensitive("SECRET_*")]
-        );
+        assert_eq!(config.policy.exclude, vec!["SECRET_*".to_string()]);
         assert_eq!(config.policy.r#set, policy.r#set);
-        assert_eq!(
-            config.policy.include_only,
-            vec![EnvironmentVariablePattern::new_case_insensitive("*PATH")]
-        );
+        assert_eq!(config.policy.include_only, vec!["*PATH".to_string()]);
         assert_eq!(config.local_policy_env, local_policy_env);
     }
 

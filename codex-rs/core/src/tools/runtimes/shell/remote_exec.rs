@@ -407,8 +407,8 @@ mod tests {
             .expect("remote shell output should succeed");
 
         assert_eq!(output.exit_code, 0);
-        assert_eq!(output.stdout, "hello world");
-        assert_eq!(output.stderr, "warn");
+        assert_eq!(output.stdout.text, "hello world");
+        assert_eq!(output.stderr.text, "warn");
         assert_eq!(output.aggregated_output.text, "hello warnworld");
         assert!(!output.timed_out);
     }
