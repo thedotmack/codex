@@ -223,10 +223,10 @@ where
 pub(crate) struct RpcClient {
     write_tx: mpsc::Sender<JSONRPCMessage>,
     pending: Arc<Mutex<HashMap<RequestId, PendingRequest>>>,
-    // Shared transport state from `JsonRpcConnection`. Calls use this to fail
-    // immediately when the socket closes, even if no JSON-RPC error response
-    // can be delivered for their request id.
-    disconnected_rx: watch::Receiver<bool>,
+    // This flips when either the underlying transport closes or the RPC reader
+    // exits, so new calls fail quickly after the connection is no longer usable.
+    closed_rx: watch::Receiver<bool>,
+    transport_disconnected_rx: watch::Receiver<bool>,
     next_request_id: AtomicI64,
     transport_tasks: Vec<JoinHandle<()>>,
     reader_task: JoinHandle<()>,
@@ -236,38 +236,36 @@ impl RpcClient {
     pub(crate) fn new(
         connection: &mut JsonRpcConnection,
     ) -> (Self, mpsc::Receiver<RpcClientEvent>) {
-        let (write_tx, mut incoming_rx, disconnected_rx, transport_tasks) =
+        let (write_tx, mut incoming_rx, transport_disconnected_rx, transport_tasks) =
             connection.take_client_runtime();
         let pending = Arc::new(Mutex::new(HashMap::<RequestId, PendingRequest>::new()));
         let (event_tx, event_rx) = mpsc::channel(128);
+        let (closed_tx, closed_rx) = watch::channel(*transport_disconnected_rx.borrow());
 
         let pending_for_reader = Arc::clone(&pending);
         let reader_task = tokio::spawn(async move {
-            while let Some(event) = incoming_rx.recv().await {
+            let reason = loop {
+                let Some(event) = incoming_rx.recv().await else {
+                    break None;
+                };
+
                 match event {
                     JsonRpcConnectionEvent::Message(message) => {
                         if let Err(err) =
                             handle_server_message(&pending_for_reader, &event_tx, message).await
                         {
-                            let _ = err;
-                            break;
+                            break Some(err);
                         }
                     }
                     JsonRpcConnectionEvent::MalformedMessage { reason } => {
-                        let _ = reason;
-                        break;
+                        break Some(reason);
                     }
-                    JsonRpcConnectionEvent::Disconnected { reason } => {
-                        let _ = event_tx.send(RpcClientEvent::Disconnected { reason }).await;
-                        drain_pending(&pending_for_reader).await;
-                        return;
-                    }
+                    JsonRpcConnectionEvent::Disconnected { reason } => break reason,
                 }
-            }
+            };
 
-            let _ = event_tx
-                .send(RpcClientEvent::Disconnected { reason: None })
-                .await;
+            let _ = closed_tx.send(true);
+            let _ = event_tx.send(RpcClientEvent::Disconnected { reason }).await;
             drain_pending(&pending_for_reader).await;
         });
 
@@ -275,7 +273,8 @@ impl RpcClient {
             Self {
                 write_tx,
                 pending,
-                disconnected_rx,
+                closed_rx,
+                transport_disconnected_rx,
                 next_request_id: AtomicI64::new(1),
                 transport_tasks,
                 reader_task,
@@ -290,6 +289,12 @@ impl RpcClient {
         params: &P,
     ) -> Result<(), serde_json::Error> {
         let params = serde_json::to_value(params)?;
+        if *self.closed_rx.borrow() || *self.transport_disconnected_rx.borrow() {
+            return Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "JSON-RPC transport closed",
+            )));
+        }
         self.write_tx
             .send(JSONRPCMessage::Notification(JSONRPCNotification {
                 method: method.to_string(),
@@ -316,7 +321,7 @@ impl RpcClient {
             // Registering the pending request and checking disconnect must be
             // atomic with the reader's drain_pending path. Otherwise a call
             // can sneak in after the drain and wait forever.
-            if *self.disconnected_rx.borrow() {
+            if *self.closed_rx.borrow() || *self.transport_disconnected_rx.borrow() {
                 return Err(RpcCallError::Closed);
             }
             pending.insert(request_id.clone(), response_tx);
@@ -518,7 +523,9 @@ mod tests {
     use std::time::Duration;
 
     use codex_app_server_protocol::JSONRPCMessage;
+    use codex_app_server_protocol::JSONRPCRequest;
     use codex_app_server_protocol::JSONRPCResponse;
+    use codex_app_server_protocol::RequestId;
     use pretty_assertions::assert_eq;
     use tokio::io::AsyncBufReadExt;
     use tokio::io::AsyncWriteExt;
@@ -526,6 +533,7 @@ mod tests {
     use tokio::time::timeout;
 
     use super::RpcClient;
+    use super::RpcClientEvent;
     use crate::connection::JsonRpcConnection;
 
     async fn read_jsonrpc_line<R>(lines: &mut tokio::io::Lines<BufReader<R>>) -> JSONRPCMessage
@@ -628,5 +636,50 @@ mod tests {
         if let Err(err) = server.await {
             panic!("server task failed: {err}");
         }
+    }
+
+    #[tokio::test]
+    async fn rpc_client_rejects_new_calls_after_reader_protocol_error() {
+        let (client_stdin, _server_reader) = tokio::io::duplex(4096);
+        let (mut server_writer, client_stdout) = tokio::io::duplex(4096);
+        let mut connection =
+            JsonRpcConnection::from_stdio(client_stdout, client_stdin, "test-rpc".to_string());
+        let (client, mut events_rx) = RpcClient::new(&mut connection);
+
+        write_jsonrpc_line(
+            &mut server_writer,
+            JSONRPCMessage::Request(JSONRPCRequest {
+                id: RequestId::Integer(1),
+                method: "server/request".to_string(),
+                params: None,
+                trace: None,
+            }),
+        )
+        .await;
+
+        let event = timeout(Duration::from_secs(1), events_rx.recv())
+            .await
+            .expect("timed out waiting for disconnect event");
+        match event {
+            Some(RpcClientEvent::Disconnected { reason }) => {
+                assert!(
+                    reason
+                        .as_deref()
+                        .is_some_and(|reason| reason.contains("unexpected JSON-RPC request")),
+                    "unexpected disconnect reason: {reason:?}"
+                );
+            }
+            event => panic!("expected disconnect event, got {event:?}"),
+        }
+
+        let result = timeout(
+            Duration::from_secs(1),
+            client.call::<_, serde_json::Value>("after-close", &serde_json::json!({})),
+        )
+        .await
+        .expect("timed out waiting for closed call");
+
+        assert!(matches!(result, Err(super::RpcCallError::Closed)));
+        assert_eq!(client.pending_request_count().await, 0);
     }
 }

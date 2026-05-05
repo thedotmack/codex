@@ -31,12 +31,12 @@ enum JsonRpcTransport {
 
 impl JsonRpcTransport {
     fn from_child_process(child_process: Child) -> Self {
-        Self::Stdio(StdioTransport { child_process })
+        Self::Stdio(StdioTransport {
+            child_process: Some(child_process),
+        })
     }
-}
 
-impl Drop for JsonRpcTransport {
-    fn drop(&mut self) {
+    fn shutdown(&mut self) {
         match self {
             Self::Plain => {}
             Self::Stdio(transport) => transport.shutdown(),
@@ -45,13 +45,29 @@ impl Drop for JsonRpcTransport {
 }
 
 struct StdioTransport {
-    child_process: Child,
+    child_process: Option<Child>,
 }
 
 impl StdioTransport {
     fn shutdown(&mut self) {
-        if let Err(err) = self.child_process.start_kill() {
+        let Some(mut child_process) = self.child_process.take() else {
+            return;
+        };
+
+        if let Err(err) = child_process.start_kill() {
             debug!("failed to terminate exec-server stdio child: {err}");
+        }
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(async move {
+                    if let Err(err) = child_process.wait().await {
+                        debug!("failed to wait for exec-server stdio child: {err}");
+                    }
+                });
+            }
+            Err(err) => {
+                debug!("failed to wait for exec-server stdio child without a Tokio runtime: {err}");
+            }
         }
     }
 }
@@ -65,8 +81,13 @@ struct JsonRpcConnectionRuntime {
 
 pub(crate) struct JsonRpcConnection {
     runtime: Option<JsonRpcConnectionRuntime>,
-    #[allow(dead_code)]
     transport: JsonRpcTransport,
+}
+
+impl Drop for JsonRpcConnection {
+    fn drop(&mut self) {
+        self.transport.shutdown();
+    }
 }
 
 impl JsonRpcConnection {
@@ -326,7 +347,7 @@ impl JsonRpcConnection {
     }
 
     pub(crate) fn into_parts(
-        self,
+        mut self,
     ) -> (
         mpsc::Sender<JSONRPCMessage>,
         mpsc::Receiver<JsonRpcConnectionEvent>,
@@ -340,6 +361,7 @@ impl JsonRpcConnection {
             task_handles,
         } = self
             .runtime
+            .take()
             .expect("JSON-RPC connection parts already taken");
         (outgoing_tx, incoming_rx, disconnected_rx, task_handles)
     }

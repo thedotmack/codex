@@ -29,7 +29,7 @@ pub struct RemoteExecServerConnectArgs {
 
 /// Stdio connection arguments for a command-backed exec-server.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StdioExecServerConnectArgs {
+pub(crate) struct StdioExecServerConnectArgs {
     pub command: StdioExecServerCommand,
     pub client_name: String,
     pub initialize_timeout: Duration,
@@ -38,16 +38,16 @@ pub struct StdioExecServerConnectArgs {
 
 /// Structured process command used to start an exec-server over stdio.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StdioExecServerCommand {
+pub(crate) struct StdioExecServerCommand {
     pub program: String,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
     pub cwd: Option<PathBuf>,
 }
 
-/// Transport used to connect to a remote exec-server environment.
+/// Parameters used to connect to a remote exec-server environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExecServerTransport {
+pub(crate) enum ExecServerTransportParams {
     WebSocketUrl(String),
     StdioCommand(StdioExecServerCommand),
 }

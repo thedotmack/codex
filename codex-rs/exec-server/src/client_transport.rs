@@ -22,10 +22,10 @@ const ENVIRONMENT_INITIALIZE_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl ExecServerClient {
     pub(crate) async fn connect_for_transport(
-        transport: crate::client_api::ExecServerTransport,
+        transport_params: crate::client_api::ExecServerTransportParams,
     ) -> Result<Self, ExecServerError> {
-        match transport {
-            crate::client_api::ExecServerTransport::WebSocketUrl(websocket_url) => {
+        match transport_params {
+            crate::client_api::ExecServerTransportParams::WebSocketUrl(websocket_url) => {
                 Self::connect_websocket(RemoteExecServerConnectArgs {
                     websocket_url,
                     client_name: ENVIRONMENT_CLIENT_NAME.to_string(),
@@ -35,7 +35,7 @@ impl ExecServerClient {
                 })
                 .await
             }
-            crate::client_api::ExecServerTransport::StdioCommand(command) => {
+            crate::client_api::ExecServerTransportParams::StdioCommand(command) => {
                 Self::connect_stdio_command(StdioExecServerConnectArgs {
                     command,
                     client_name: ENVIRONMENT_CLIENT_NAME.to_string(),
@@ -73,7 +73,7 @@ impl ExecServerClient {
         .await
     }
 
-    pub async fn connect_stdio_command(
+    pub(crate) async fn connect_stdio_command(
         args: StdioExecServerConnectArgs,
     ) -> Result<Self, ExecServerError> {
         let mut child = stdio_command_process(&args.command)

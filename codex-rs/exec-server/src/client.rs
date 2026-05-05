@@ -21,7 +21,7 @@ use tracing::debug;
 
 use crate::ProcessId;
 use crate::client_api::ExecServerClientConnectOptions;
-use crate::client_api::ExecServerTransport;
+use crate::client_api::ExecServerTransportParams;
 use crate::client_api::HttpClient;
 use crate::client_api::RemoteExecServerConnectArgs;
 use crate::client_api::StdioExecServerConnectArgs;
@@ -195,14 +195,14 @@ pub struct ExecServerClient {
 
 #[derive(Clone)]
 pub(crate) struct LazyRemoteExecServerClient {
-    transport: ExecServerTransport,
+    transport_params: ExecServerTransportParams,
     client: Arc<OnceCell<ExecServerClient>>,
 }
 
 impl LazyRemoteExecServerClient {
-    pub(crate) fn new(transport: ExecServerTransport) -> Self {
+    pub(crate) fn new(transport_params: ExecServerTransportParams) -> Self {
         Self {
-            transport,
+            transport_params,
             client: Arc::new(OnceCell::new()),
         }
     }
@@ -212,8 +212,8 @@ impl LazyRemoteExecServerClient {
             // TODO: Add reconnect/disconnect handling here instead of reusing
             // the first successfully initialized connection forever.
             .get_or_try_init(|| {
-                let transport = self.transport.clone();
-                async move { ExecServerClient::connect_for_transport(transport).await }
+                let transport_params = self.transport_params.clone();
+                async move { ExecServerClient::connect_for_transport(transport_params).await }
             })
             .await
             .cloned()
@@ -886,8 +886,8 @@ mod tests {
     use super::ExecServerClient;
     use super::ExecServerClientConnectOptions;
     use crate::ProcessId;
-    use crate::StdioExecServerCommand;
-    use crate::StdioExecServerConnectArgs;
+    use crate::client_api::StdioExecServerCommand;
+    use crate::client_api::StdioExecServerConnectArgs;
     use crate::connection::JsonRpcConnection;
     use crate::process::ExecProcessEvent;
     use crate::protocol::EXEC_CLOSED_METHOD;
