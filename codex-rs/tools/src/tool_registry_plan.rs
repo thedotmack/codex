@@ -43,7 +43,6 @@ use crate::create_request_user_input_tool;
 use crate::create_resume_agent_tool;
 use crate::create_send_input_tool_v1;
 use crate::create_send_message_tool;
-use crate::create_shell_command_tool;
 use crate::create_shell_tool;
 use crate::create_spawn_agent_tool_v1;
 use crate::create_spawn_agent_tool_v2;
@@ -61,6 +60,7 @@ use crate::create_write_stdin_tool;
 use crate::default_namespace_description;
 use crate::dynamic_tool_to_loadable_tool_spec;
 use crate::local_tool::create_exec_command_tool_with_environment_id;
+use crate::local_tool::create_shell_command_tool_with_environment_id;
 use crate::mcp_tool_to_responses_api_tool;
 use crate::request_permissions_tool_description;
 use crate::request_user_input_tool_description;
@@ -178,10 +178,13 @@ pub fn build_tool_registry_plan(
             ConfigShellToolType::Disabled => {}
             ConfigShellToolType::ShellCommand => {
                 plan.push_spec(
-                    create_shell_command_tool(CommandToolOptions {
-                        allow_login_shell: config.allow_login_shell,
-                        exec_permission_approvals_enabled,
-                    }),
+                    create_shell_command_tool_with_environment_id(
+                        CommandToolOptions {
+                            allow_login_shell: config.allow_login_shell,
+                            exec_permission_approvals_enabled,
+                        },
+                        include_environment_id,
+                    ),
                     /*supports_parallel_tool_calls*/ true,
                     config.code_mode_enabled,
                 );

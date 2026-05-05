@@ -212,6 +212,13 @@ Examples of valid command strings:
 }
 
 pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
+    create_shell_command_tool_with_environment_id(options, /*include_environment_id*/ false)
+}
+
+pub(crate) fn create_shell_command_tool_with_environment_id(
+    options: CommandToolOptions,
+    include_environment_id: bool,
+) -> ToolSpec {
     let mut properties = BTreeMap::from([
         (
             "command".to_string(),
@@ -241,6 +248,7 @@ pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
             )),
         );
     }
+    maybe_insert_environment_id_parameter(&mut properties, include_environment_id);
     properties.extend(create_approval_parameters(
         options.exec_permission_approvals_enabled,
     ));

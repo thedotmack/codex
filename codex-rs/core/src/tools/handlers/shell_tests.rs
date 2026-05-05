@@ -76,7 +76,7 @@ fn assert_safe(shell: &Shell, command: &str) {
 }
 
 #[tokio::test]
-async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_context() {
+async fn shell_command_handler_to_exec_params_uses_selected_shell_and_turn_context() {
     let (session, turn_context) = make_session_and_context().await;
 
     let command = "echo hello".to_string();
@@ -86,9 +86,8 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     let sandbox_permissions = SandboxPermissions::RequireEscalated;
     let justification = Some("because tests".to_string());
 
-    let expected_command = session
-        .user_shell()
-        .derive_exec_args(&command, /*use_login_shell*/ true);
+    let shell = session.user_shell();
+    let expected_command = shell.derive_exec_args(&command, /*use_login_shell*/ true);
     let expected_cwd = turn_context.resolve_path(workdir.clone());
     let expected_env = create_env(
         &turn_context.shell_environment_policy,
@@ -108,9 +107,10 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
 
     let exec_params = ShellCommandHandler::to_exec_params(
         &params,
-        &session,
+        &shell,
         &turn_context,
         session.conversation_id,
+        expected_cwd.clone(),
         /*allow_login_shell*/ true,
     )
     .expect("login shells should be allowed");
@@ -162,6 +162,7 @@ fn shell_command_handler_respects_explicit_login_flag() {
 #[tokio::test]
 async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
     let (session, turn_context) = make_session_and_context().await;
+    let shell = session.user_shell();
     let params = ShellCommandToolCallParams {
         command: "echo hello".to_string(),
         workdir: None,
@@ -175,9 +176,10 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
 
     let exec_params = ShellCommandHandler::to_exec_params(
         &params,
-        &session,
+        &shell,
         &turn_context,
         session.conversation_id,
+        turn_context.resolve_path(params.workdir.clone()),
         /*allow_login_shell*/ false,
     )
     .expect("non-login shells should still be allowed");

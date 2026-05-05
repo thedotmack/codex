@@ -204,6 +204,49 @@ fn exec_command_spec_includes_environment_id_only_for_multiple_selected_environm
 }
 
 #[test]
+fn shell_command_spec_includes_environment_id_only_for_multiple_selected_environments() {
+    let model_info = model_info();
+    let available_models = Vec::new();
+    let mut shell_command_features = Features::with_defaults();
+    shell_command_features.disable(Feature::UnifiedExec);
+    let shell_command_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &shell_command_features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (single_environment_shell_tools, _) = build_specs(
+        &shell_command_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_process_tool_environment_id(
+        &single_environment_shell_tools,
+        "shell_command",
+        /*expected_present*/ false,
+    );
+
+    let multi_environment_shell_config =
+        shell_command_config.with_environment_mode(ToolEnvironmentMode::Multiple);
+    let (multi_environment_shell_tools, _) = build_specs(
+        &multi_environment_shell_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+    assert_process_tool_environment_id(
+        &multi_environment_shell_tools,
+        "shell_command",
+        /*expected_present*/ true,
+    );
+}
+
+#[test]
 fn test_build_specs_collab_tools_enabled() {
     let model_info = model_info();
     let mut features = Features::with_defaults();

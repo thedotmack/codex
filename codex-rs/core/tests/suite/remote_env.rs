@@ -50,6 +50,17 @@ async fn unified_exec_test(server: &wiremock::MockServer) -> Result<TestCodex> {
     builder.build_remote_aware(server).await
 }
 
+async fn shell_command_test(server: &wiremock::MockServer) -> Result<TestCodex> {
+    test_codex()
+        .with_model("test-gpt-5-codex")
+        .with_config(|config| {
+            config.use_experimental_unified_exec_tool = false;
+            config.features.disable(Feature::UnifiedExec);
+        })
+        .build_remote_aware(server)
+        .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_test_env_can_connect_and_use_filesystem() -> Result<()> {
     let Some(_remote_env) = get_remote_test_env() else {
@@ -182,6 +193,42 @@ async fn exec_command_routing_output(
         .with_context(|| format!("missing function_call_output for {call_id}"))
 }
 
+async fn shell_command_routing_output(
+    test: &TestCodex,
+    server: &wiremock::MockServer,
+    call_id: &str,
+    arguments: Value,
+    environments: Option<Vec<TurnEnvironmentSelection>>,
+) -> Result<String> {
+    let response_mock = mount_sse_sequence(
+        server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_function_call(
+                    call_id,
+                    "shell_command",
+                    &serde_json::to_string(&arguments)?,
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn_with_environments("route shell command", environments)
+        .await?;
+
+    response_mock
+        .function_call_output_text(call_id)
+        .with_context(|| format!("missing function_call_output for {call_id}"))
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_command_routes_to_selected_remote_environment() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -242,6 +289,81 @@ async fn exec_command_routes_to_selected_remote_environment() -> Result<()> {
     assert!(
         !multi_env_output.contains("local-routing"),
         "multi-env command should not route to local: {multi_env_output}",
+    );
+
+    test.fs()
+        .remove(
+            &remote_cwd,
+            RemoveOptions {
+                recursive: true,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_command_routes_to_selected_remote_environment() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let Some(_remote_env) = get_remote_test_env() else {
+        return Ok(());
+    };
+
+    let server = start_mock_server().await;
+    let test = shell_command_test(&server).await?;
+    let local_cwd = TempDir::new()?;
+    fs::write(local_cwd.path().join("marker.txt"), "local-routing")?;
+    let local_selection = TurnEnvironmentSelection {
+        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd: local_cwd.path().abs(),
+    };
+    let remote_cwd = PathBuf::from(format!(
+        "/tmp/codex-shell-remote-routing-{}",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    ))
+    .abs();
+    let remote_marker_name = "marker.txt";
+    test.fs()
+        .create_directory(
+            &remote_cwd,
+            CreateDirectoryOptions { recursive: true },
+            /*sandbox*/ None,
+        )
+        .await?;
+    test.fs()
+        .write_file(
+            &remote_cwd.join(remote_marker_name),
+            b"remote-routing".to_vec(),
+            /*sandbox*/ None,
+        )
+        .await?;
+    let remote_selection = TurnEnvironmentSelection {
+        environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+        cwd: remote_cwd.clone(),
+    };
+    let output = shell_command_routing_output(
+        &test,
+        &server,
+        "call-shell-multi-env",
+        json!({
+            "command": format!("cat {remote_marker_name}"),
+            "login": false,
+            "timeout_ms": 1_000,
+            "environment_id": REMOTE_ENVIRONMENT_ID,
+        }),
+        Some(vec![local_selection, remote_selection]),
+    )
+    .await?;
+    assert!(
+        output.contains("remote-routing"),
+        "unexpected shell_command output: {output}",
+    );
+    assert!(
+        !output.contains("local-routing"),
+        "shell_command should not route to local: {output}",
     );
 
     test.fs()
