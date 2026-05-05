@@ -22,6 +22,13 @@ pub enum AppToolApproval {
     Approve,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAppMessageApprovalMode {
+    Auto,
+    ApproveInThread,
+}
+
 /// Human-readable reason a configured MCP server was disabled after requirements
 /// were applied.
 ///
@@ -54,6 +61,10 @@ pub struct McpServerToolConfig {
     /// Approval mode for this tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_mode: Option<AppToolApproval>,
+
+    /// Approval mode for MCP app messages sent by this tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_app_message_approval_mode: Option<McpAppMessageApprovalMode>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]

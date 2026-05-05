@@ -13,6 +13,7 @@ use toml_edit::value;
 
 use crate::AppToolApproval;
 use crate::CONFIG_TOML_FILE;
+use crate::McpAppMessageApprovalMode;
 use crate::McpServerConfig;
 use crate::McpServerEnvVar;
 use crate::McpServerTransportConfig;
@@ -230,6 +231,12 @@ fn serialize_mcp_server(config: &McpServerConfig) -> TomlItem {
                     AppToolApproval::Auto => "auto",
                     AppToolApproval::Prompt => "prompt",
                     AppToolApproval::Approve => "approve",
+                });
+            }
+            if let Some(approval_mode) = tool_config.mcp_app_message_approval_mode {
+                tool_entry["mcp_app_message_approval_mode"] = value(match approval_mode {
+                    McpAppMessageApprovalMode::Auto => "auto",
+                    McpAppMessageApprovalMode::ApproveInThread => "approve_in_thread",
                 });
             }
             tools.insert(name, TomlItem::Table(tool_entry));

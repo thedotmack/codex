@@ -10,6 +10,62 @@
       ],
       "type": "string"
     },
+    "McpServerProvider": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "codex-apps"
+              ],
+              "title": "CodexAppsMcpServerProviderType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "CodexAppsMcpServerProvider",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "mcp"
+              ],
+              "title": "McpMcpServerProviderType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "McpMcpServerProvider",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "pluginId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "plugin-mcp"
+              ],
+              "title": "PluginMcpMcpServerProviderType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pluginId",
+            "type"
+          ],
+          "title": "PluginMcpMcpServerProvider",
+          "type": "object"
+        }
+      ]
+    },
     "McpServerStatus": {
       "properties": {
         "authStatus": {
@@ -17,6 +73,9 @@
         },
         "name": {
           "type": "string"
+        },
+        "provider": {
+          "$ref": "#/definitions/McpServerProvider"
         },
         "resourceTemplates": {
           "items": {
@@ -40,6 +99,7 @@
       "required": [
         "authStatus",
         "name",
+        "provider",
         "resourceTemplates",
         "resources",
         "tools"

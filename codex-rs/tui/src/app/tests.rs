@@ -37,6 +37,7 @@ use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::McpServerProvider;
 use codex_app_server_protocol::McpServerStartupState;
 use codex_app_server_protocol::McpServerStatusUpdatedNotification;
 use codex_app_server_protocol::NetworkApprovalContext as AppServerNetworkApprovalContext;
@@ -111,6 +112,7 @@ async fn handle_mcp_inventory_result_clears_committed_loading_cell() {
     app.handle_mcp_inventory_result(
         Ok(vec![McpServerStatus {
             name: "docs".to_string(),
+            provider: McpServerProvider::Mcp,
             tools: HashMap::new(),
             resources: Vec::new(),
             resource_templates: Vec::new(),

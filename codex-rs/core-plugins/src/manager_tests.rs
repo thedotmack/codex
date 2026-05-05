@@ -325,6 +325,7 @@ approval_mode = "approve"
         server.tools.get("search"),
         Some(&McpServerToolConfig {
             approval_mode: Some(AppToolApproval::Approve),
+            mcp_app_message_approval_mode: None,
         })
     );
 }

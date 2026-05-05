@@ -235,6 +235,52 @@ async fn write_value_supports_custom_mcp_server_default_tool_approval_mode() -> 
 }
 
 #[tokio::test]
+async fn write_value_supports_custom_mcp_server_message_approval_mode() -> Result<()> {
+    let tmp = tempdir().expect("tempdir");
+    std::fs::write(
+        tmp.path().join(CONFIG_TOML_FILE),
+        "[mcp_servers.docs]\ncommand = \"docs-server\"\n",
+    )?;
+
+    let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
+    service
+        .write_value(ConfigValueWriteParams {
+            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
+            key_path: "mcp_servers.docs.tools".to_string(),
+            value: serde_json::json!({
+                "search": {
+                    "mcp_app_message_approval_mode": "approve_in_thread",
+                },
+            }),
+            merge_strategy: MergeStrategy::Upsert,
+            expected_version: None,
+        })
+        .await
+        .expect("write mcp server tool mcp_app_message_approval_mode succeeds");
+
+    let read = service
+        .read(ConfigReadParams {
+            include_layers: false,
+            cwd: None,
+        })
+        .await
+        .expect("config read succeeds");
+
+    assert_eq!(
+        read.config
+            .additional
+            .get("mcp_servers")
+            .and_then(|servers| servers.get("docs"))
+            .and_then(|server| server.get("tools"))
+            .and_then(|tools| tools.get("search"))
+            .and_then(|tool| tool.get("mcp_app_message_approval_mode")),
+        Some(&serde_json::json!("approve_in_thread"))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn read_includes_origins_and_layers() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);

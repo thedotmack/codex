@@ -11,6 +11,8 @@ use codex_app_server_protocol::MarketplaceRemoveParams;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeParams;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
+#[cfg(test)]
+use codex_app_server_protocol::McpServerProvider;
 
 use codex_app_server_protocol::RequestId;
 
@@ -956,6 +958,7 @@ mod tests {
         let statuses = vec![
             McpServerStatus {
                 name: "docs".to_string(),
+                provider: McpServerProvider::Mcp,
                 tools: HashMap::from([(
                     "list".to_string(),
                     Tool {
@@ -975,6 +978,7 @@ mod tests {
             },
             McpServerStatus {
                 name: "disabled".to_string(),
+                provider: McpServerProvider::Mcp,
                 tools: HashMap::new(),
                 resources: Vec::new(),
                 resource_templates: Vec::new(),

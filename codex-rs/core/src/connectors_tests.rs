@@ -859,6 +859,7 @@ fn app_tool_policy_per_tool_enabled_true_overrides_app_level_disable_flags() {
                         AppToolConfig {
                             enabled: Some(true),
                             approval_mode: None,
+                            mcp_app_message_approval_mode: None,
                         },
                     )]),
                 }),
@@ -1009,6 +1010,7 @@ fn app_tool_policy_matches_prefix_stripped_tool_name_for_tool_config() {
                         AppToolConfig {
                             enabled: Some(true),
                             approval_mode: Some(AppToolApproval::Approve),
+                            mcp_app_message_approval_mode: None,
                         },
                     )]),
                 }),

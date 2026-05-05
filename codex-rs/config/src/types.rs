@@ -4,6 +4,7 @@
 // definitions that do not contain business logic.
 
 pub use crate::mcp_types::AppToolApproval;
+pub use crate::mcp_types::McpAppMessageApprovalMode;
 pub use crate::mcp_types::McpServerConfig;
 pub use crate::mcp_types::McpServerDisabledReason;
 pub use crate::mcp_types::McpServerEnvVar;
@@ -375,6 +376,10 @@ pub struct AppToolConfig {
     /// Approval mode for this tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_mode: Option<AppToolApproval>,
+
+    /// Approval mode for MCP app messages sent by resources returned from this tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_app_message_approval_mode: Option<McpAppMessageApprovalMode>,
 }
 
 /// Tool settings for a single app.

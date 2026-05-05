@@ -161,6 +161,14 @@
         "enabled": {
           "description": "Whether this tool is enabled. `Some(true)` explicitly allows this tool.",
           "type": "boolean"
+        },
+        "mcp_app_message_approval_mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/McpAppMessageApprovalMode"
+            }
+          ],
+          "description": "Approval mode for MCP app messages sent by resources returned from this tool."
         }
       },
       "type": "object"
@@ -1136,6 +1144,13 @@
       },
       "type": "object"
     },
+    "McpAppMessageApprovalMode": {
+      "enum": [
+        "auto",
+        "approve_in_thread"
+      ],
+      "type": "string"
+    },
     "McpServerEnvVar": {
       "anyOf": [
         {
@@ -1169,6 +1184,14 @@
             }
           ],
           "description": "Approval mode for this tool."
+        },
+        "mcp_app_message_approval_mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/McpAppMessageApprovalMode"
+            }
+          ],
+          "description": "Approval mode for MCP app messages sent by this tool."
         }
       },
       "type": "object"

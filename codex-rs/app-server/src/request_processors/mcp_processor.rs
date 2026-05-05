@@ -335,6 +335,29 @@ impl McpRequestProcessor {
             resource_templates,
             auth_statuses,
         } = snapshot;
+        let mut provider_by_server: HashMap<String, McpServerProvider> = config
+            .mcp_servers
+            .keys()
+            .cloned()
+            .map(|name| (name, McpServerProvider::Mcp))
+            .collect();
+        for plugin in &mcp_config.plugin_capability_summaries {
+            for name in &plugin.mcp_server_names {
+                if effective_servers.contains_key(name) {
+                    provider_by_server.entry(name.clone()).or_insert_with(|| {
+                        McpServerProvider::PluginMcp {
+                            plugin_id: plugin.config_name.clone(),
+                        }
+                    });
+                }
+            }
+        }
+        if effective_servers.contains_key(CODEX_APPS_MCP_SERVER_NAME) {
+            provider_by_server.insert(
+                CODEX_APPS_MCP_SERVER_NAME.to_string(),
+                McpServerProvider::CodexApps,
+            );
+        }
 
         let mut server_names: Vec<String> = config
             .mcp_servers
@@ -374,6 +397,10 @@ impl McpRequestProcessor {
             .iter()
             .map(|name| McpServerStatus {
                 name: name.clone(),
+                provider: provider_by_server
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(McpServerProvider::Mcp),
                 tools: tools_by_server.get(name).cloned().unwrap_or_default(),
                 resources: resources.get(name).cloned().unwrap_or_default(),
                 resource_templates: resource_templates.get(name).cloned().unwrap_or_default(),

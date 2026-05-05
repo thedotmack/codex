@@ -188,6 +188,7 @@ pub fn model_availability_nux_count_edits(shown_count: &HashMap<String, u32>) ->
 // TODO(jif) move to a dedicated file
 mod document_helpers {
     use codex_config::types::AppToolApproval;
+    use codex_config::types::McpAppMessageApprovalMode;
     use codex_config::types::McpServerConfig;
     use codex_config::types::McpServerEnvVar;
     use codex_config::types::McpServerToolConfig;
@@ -350,6 +351,12 @@ mod document_helpers {
                 AppToolApproval::Auto => "auto",
                 AppToolApproval::Prompt => "prompt",
                 AppToolApproval::Approve => "approve",
+            });
+        }
+        if let Some(approval_mode) = config.mcp_app_message_approval_mode {
+            entry["mcp_app_message_approval_mode"] = value(match approval_mode {
+                McpAppMessageApprovalMode::Auto => "auto",
+                McpAppMessageApprovalMode::ApproveInThread => "approve_in_thread",
             });
         }
         TomlItem::Table(entry)

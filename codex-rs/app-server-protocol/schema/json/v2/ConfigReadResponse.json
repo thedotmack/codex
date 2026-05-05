@@ -89,6 +89,16 @@
             "boolean",
             "null"
           ]
+        },
+        "mcp_app_message_approval_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/McpAppMessageApprovalMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "type": "object"
@@ -582,6 +592,13 @@
       "enum": [
         "chatgpt",
         "api"
+      ],
+      "type": "string"
+    },
+    "McpAppMessageApprovalMode": {
+      "enum": [
+        "auto",
+        "approve_in_thread"
       ],
       "type": "string"
     },

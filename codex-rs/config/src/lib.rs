@@ -88,6 +88,7 @@ pub use marketplace_edit::remove_user_marketplace_config;
 pub use mcp_edit::ConfigEditsBuilder;
 pub use mcp_edit::load_global_mcp_servers;
 pub use mcp_types::AppToolApproval;
+pub use mcp_types::McpAppMessageApprovalMode;
 pub use mcp_types::McpServerConfig;
 pub use mcp_types::McpServerDisabledReason;
 pub use mcp_types::McpServerEnvVar;

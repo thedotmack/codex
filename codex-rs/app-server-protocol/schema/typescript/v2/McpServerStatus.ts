@@ -5,5 +5,6 @@ import type { Resource } from "../Resource";
 import type { ResourceTemplate } from "../ResourceTemplate";
 import type { Tool } from "../Tool";
 import type { McpAuthStatus } from "./McpAuthStatus";
+import type { McpServerProvider } from "./McpServerProvider";
 
-export type McpServerStatus = { name: string, tools: { [key in string]?: Tool }, resources: Array<Resource>, resourceTemplates: Array<ResourceTemplate>, authStatus: McpAuthStatus, };
+export type McpServerStatus = { name: string, provider: McpServerProvider, tools: { [key in string]?: Tool }, resources: Array<Resource>, resourceTemplates: Array<ResourceTemplate>, authStatus: McpAuthStatus, };

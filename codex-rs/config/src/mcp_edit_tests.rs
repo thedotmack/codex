@@ -39,12 +39,16 @@ async fn replace_mcp_servers_serializes_per_tool_approval_overrides() -> anyhow:
                     "search".to_string(),
                     McpServerToolConfig {
                         approval_mode: Some(AppToolApproval::Approve),
+                        mcp_app_message_approval_mode: Some(
+                            McpAppMessageApprovalMode::ApproveInThread,
+                        ),
                     },
                 ),
                 (
                     "read".to_string(),
                     McpServerToolConfig {
                         approval_mode: Some(AppToolApproval::Prompt),
+                        mcp_app_message_approval_mode: None,
                     },
                 ),
             ]),
@@ -72,6 +76,7 @@ approval_mode = "prompt"
 
 [mcp_servers.docs.tools.search]
 approval_mode = "approve"
+mcp_app_message_approval_mode = "approve_in_thread"
 "#
     );
 

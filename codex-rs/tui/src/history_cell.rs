@@ -48,6 +48,8 @@ use crate::wrapping::adaptive_wrap_lines;
 use base64::Engine;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::McpAuthStatus;
+#[cfg(test)]
+use codex_app_server_protocol::McpServerProvider;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PermissionProfile as AppServerPermissionProfile;
@@ -3661,6 +3663,7 @@ mod tests {
 
         let statuses = vec![McpServerStatus {
             name: "plugin_docs".to_string(),
+            provider: McpServerProvider::Mcp,
             tools: HashMap::from([(
                 "lookup".to_string(),
                 Tool {
@@ -3702,6 +3705,7 @@ mod tests {
 
         let statuses = vec![McpServerStatus {
             name: "plugin_docs".to_string(),
+            provider: McpServerProvider::Mcp,
             tools: HashMap::from([(
                 "lookup".to_string(),
                 Tool {

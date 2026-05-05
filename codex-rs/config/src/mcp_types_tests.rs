@@ -320,6 +320,7 @@ fn deserialize_server_config_with_default_tool_approval_mode() {
 
             [tools.search]
             approval_mode = "prompt"
+            mcp_app_message_approval_mode = "approve_in_thread"
         "#,
     )
     .expect("should deserialize default tool approval mode");
@@ -332,11 +333,13 @@ fn deserialize_server_config_with_default_tool_approval_mode() {
         cfg.tools.get("search"),
         Some(&McpServerToolConfig {
             approval_mode: Some(AppToolApproval::Prompt),
+            mcp_app_message_approval_mode: Some(McpAppMessageApprovalMode::ApproveInThread),
         })
     );
 
     let serialized = toml::to_string(&cfg).expect("should serialize MCP config");
     assert!(serialized.contains("default_tools_approval_mode = \"approve\""));
+    assert!(serialized.contains("mcp_app_message_approval_mode = \"approve_in_thread\""));
 
     let round_tripped: McpServerConfig =
         toml::from_str(&serialized).expect("should deserialize serialized MCP config");
