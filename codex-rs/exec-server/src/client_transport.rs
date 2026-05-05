@@ -107,7 +107,7 @@ impl ExecServerClient {
 
         Self::connect(
             JsonRpcConnection::from_stdio(stdout, stdin, "exec-server stdio command".to_string())
-                .with_stdio_child(child),
+                .with_child_process(child),
             args.into(),
         )
         .await
