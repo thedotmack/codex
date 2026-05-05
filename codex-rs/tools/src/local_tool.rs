@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub struct CommandToolOptions {
     pub allow_login_shell: bool,
     pub exec_permission_approvals_enabled: bool,
+    pub include_environment_id: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,13 +18,6 @@ pub struct ShellToolOptions {
 }
 
 pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
-    create_exec_command_tool_with_environment_id(options, /*include_environment_id*/ false)
-}
-
-pub(crate) fn create_exec_command_tool_with_environment_id(
-    options: CommandToolOptions,
-    include_environment_id: bool,
-) -> ToolSpec {
     let mut properties = BTreeMap::from([
         (
             "cmd".to_string(),
@@ -70,7 +64,7 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
             )),
         );
     }
-    if include_environment_id {
+    if options.include_environment_id {
         properties.insert(
             "environment_id".to_string(),
             JsonSchema::string(Some(
@@ -212,13 +206,6 @@ Examples of valid command strings:
 }
 
 pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
-    create_shell_command_tool_with_environment_id(options, /*include_environment_id*/ false)
-}
-
-pub(crate) fn create_shell_command_tool_with_environment_id(
-    options: CommandToolOptions,
-    include_environment_id: bool,
-) -> ToolSpec {
     let mut properties = BTreeMap::from([
         (
             "command".to_string(),
@@ -248,7 +235,7 @@ pub(crate) fn create_shell_command_tool_with_environment_id(
             )),
         );
     }
-    if include_environment_id {
+    if options.include_environment_id {
         properties.insert(
             "environment_id".to_string(),
             JsonSchema::string(Some(

@@ -89,6 +89,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         create_exec_command_tool(CommandToolOptions {
             allow_login_shell: true,
             exec_permission_approvals_enabled: false,
+            include_environment_id: false,
         }),
         create_write_stdin_tool(),
         create_update_plan_tool(),
