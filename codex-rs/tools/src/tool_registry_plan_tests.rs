@@ -648,6 +648,7 @@ fn disabled_environment_omits_environment_backed_tools() {
     assert_lacks_tool_name(&tools, VIEW_IMAGE_TOOL_NAME);
 }
 
+#[test]
 fn view_image_spec_includes_environment_id_only_for_multiple_selected_environments() {
     let model_info = model_info();
     let available_models = Vec::new();

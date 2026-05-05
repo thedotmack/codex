@@ -262,7 +262,8 @@ async fn view_image_routing_output(
         .await?;
 
     Ok(response_mock
-        .single_request()
+        .last_request()
+        .with_context(|| format!("missing request containing view_image output for {call_id}"))?
         .function_call_output(call_id)
         .clone())
 }
