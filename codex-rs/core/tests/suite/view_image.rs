@@ -410,7 +410,12 @@ async fn view_image_routes_to_selected_local_environment() -> anyhow::Result<()>
     let server = start_mock_server().await;
     let mut builder = test_codex();
     let test = builder.build(&server).await?;
-    write_workspace_file(&test, "local.png", png_bytes(1, 1, [0, 255, 0, 255])?).await?;
+    write_workspace_file(
+        &test,
+        "local.png",
+        png_bytes(/*width*/ 1, /*height*/ 1, [0, 255, 0, 255])?,
+    )
+    .await?;
     let call_id = "call-view-image-local-env";
     let response_mock = mount_sse_sequence(
         &server,
