@@ -112,17 +112,16 @@ fn resolve_environment_target(
     environments: &ResolvedTurnEnvironments,
 ) -> Result<Option<(TurnEnvironment, AbsolutePathBuf)>, FunctionCallError> {
     let target_args: EnvironmentTargetArgs = parse_arguments(arguments)?;
-    let turn_environment = match target_args.environment_id.as_deref() {
-        Some(environment_id) => environments.get_by_id(environment_id).ok_or_else(|| {
-            FunctionCallError::RespondToModel(format!(
-                "unknown turn environment id `{environment_id}`"
-            ))
-        })?,
+    let requested_environment_id = target_args.environment_id.as_deref();
+    let turn_environment = match environments.get_or_primary(requested_environment_id) {
+        Some(turn_environment) => turn_environment,
         None => {
-            let Some(turn_environment) = environments.primary() else {
+            let Some(environment_id) = requested_environment_id else {
                 return Ok(None);
             };
-            turn_environment
+            return Err(FunctionCallError::RespondToModel(format!(
+                "unknown turn environment id `{environment_id}`"
+            )));
         }
     };
     let cwd = target_args

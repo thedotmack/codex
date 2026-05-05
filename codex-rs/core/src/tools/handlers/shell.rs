@@ -15,7 +15,6 @@ use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell::empty_shell_snapshot_receiver;
-use crate::shell_detect::detect_shell_type;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -586,7 +585,9 @@ impl ToolHandler for ShellCommandHandler {
         let environment_shell = turn_environment.environment.is_remote().then(|| {
             let shell_path = PathBuf::from(&turn_environment.shell);
             Shell {
-                shell_type: detect_shell_type(&shell_path).unwrap_or(ShellType::Sh),
+                // Remote environment metadata currently reports a bash path.
+                // Do not probe or infer from the local host here.
+                shell_type: ShellType::Bash,
                 shell_path,
                 shell_snapshot: empty_shell_snapshot_receiver(),
             }

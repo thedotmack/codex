@@ -55,7 +55,7 @@ async fn shell_command_test(server: &wiremock::MockServer) -> Result<TestCodex> 
         .with_model("test-gpt-5-codex")
         .with_config(|config| {
             config.use_experimental_unified_exec_tool = false;
-            config.features.disable(Feature::UnifiedExec);
+            let _ = config.features.disable(Feature::UnifiedExec);
         })
         .build_remote_aware(server)
         .await
