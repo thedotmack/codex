@@ -22,10 +22,10 @@ pub const CODEX_EXEC_SERVER_URL_ENV_VAR: &str = "CODEX_EXEC_SERVER_URL";
 
 /// Owns the execution/filesystem environments available to the Codex runtime.
 ///
-/// `EnvironmentManager` is a shared registry for concrete environments. Its
-/// default constructor preserves the legacy `CODEX_EXEC_SERVER_URL` behavior
-/// while provider-based construction accepts a provider-supplied environment
-/// list and default id.
+/// `EnvironmentManager` is a shared registry for concrete environments.
+/// `from_codex_home` preserves the legacy `CODEX_EXEC_SERVER_URL` behavior when
+/// no `environments.toml` file is present, while provider-based construction
+/// accepts a provider-supplied environment list and default id.
 ///
 /// Setting `CODEX_EXEC_SERVER_URL=none` disables environment access by leaving
 /// the default environment unset while still keeping an explicit local
