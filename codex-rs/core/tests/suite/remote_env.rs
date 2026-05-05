@@ -381,6 +381,85 @@ async fn shell_command_routes_to_selected_remote_environment() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_command_resolves_relative_workdir_in_selected_remote_environment() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let Some(_remote_env) = get_remote_test_env() else {
+        return Ok(());
+    };
+
+    let server = start_mock_server().await;
+    let test = shell_command_test(&server).await?;
+    let local_cwd = TempDir::new()?;
+    let local_nested = local_cwd.path().join("nested");
+    fs::create_dir_all(&local_nested)?;
+    fs::write(local_nested.join("marker.txt"), "local-routing")?;
+    let local_selection = TurnEnvironmentSelection {
+        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd: local_cwd.path().abs(),
+    };
+    let remote_cwd = PathBuf::from(format!(
+        "/tmp/codex-shell-remote-workdir-{}",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    ))
+    .abs();
+    let remote_nested = remote_cwd.join("nested");
+    test.fs()
+        .create_directory(
+            &remote_nested,
+            CreateDirectoryOptions { recursive: true },
+            /*sandbox*/ None,
+        )
+        .await?;
+    test.fs()
+        .write_file(
+            &remote_nested.join("marker.txt"),
+            b"remote-routing".to_vec(),
+            /*sandbox*/ None,
+        )
+        .await?;
+    let remote_selection = TurnEnvironmentSelection {
+        environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+        cwd: remote_cwd.clone(),
+    };
+
+    let output = shell_command_routing_output(
+        &test,
+        &server,
+        "call-shell-remote-workdir",
+        json!({
+            "command": "cat marker.txt",
+            "workdir": "nested",
+            "login": false,
+            "timeout_ms": 1_000,
+            "environment_id": REMOTE_ENVIRONMENT_ID,
+        }),
+        Some(vec![local_selection, remote_selection]),
+    )
+    .await?;
+    assert!(
+        output.contains("remote-routing"),
+        "unexpected shell_command output: {output}",
+    );
+    assert!(
+        !output.contains("local-routing"),
+        "shell_command should resolve workdir in the selected remote environment: {output}",
+    );
+
+    test.fs()
+        .remove(
+            &remote_cwd,
+            RemoveOptions {
+                recursive: true,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_test_env_sandboxed_read_allows_readable_root() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let Some(_remote_env) = get_remote_test_env() else {
