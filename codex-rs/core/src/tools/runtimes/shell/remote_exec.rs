@@ -124,7 +124,7 @@ impl RemoteShellExecutor {
                     stdout,
                     stderr,
                     aggregated_output,
-                    124,
+                    /*exit_code*/ 124,
                     start.elapsed(),
                     /*timed_out*/ true,
                 );
@@ -391,8 +391,8 @@ mod tests {
         let process = FakeRemoteShellProcess::new(vec![
             read_response(
                 vec![
-                    chunk(1, ExecOutputStream::Stdout, b"hello "),
-                    chunk(2, ExecOutputStream::Stderr, b"warn"),
+                    chunk(/*seq*/ 1, ExecOutputStream::Stdout, b"hello "),
+                    chunk(/*seq*/ 2, ExecOutputStream::Stderr, b"warn"),
                 ],
                 /*next_seq*/ 3,
                 /*exited*/ false,
@@ -401,7 +401,7 @@ mod tests {
                 /*failure*/ None,
             ),
             read_response(
-                vec![chunk(3, ExecOutputStream::Stdout, b"world")],
+                vec![chunk(/*seq*/ 3, ExecOutputStream::Stdout, b"world")],
                 /*next_seq*/ 4,
                 /*exited*/ true,
                 /*exit_code*/ Some(0),
@@ -503,7 +503,7 @@ mod tests {
         };
         let process = FakeRemoteShellProcess::new(vec![read_response(
             vec![chunk(
-                1,
+                /*seq*/ 1,
                 ExecOutputStream::Stderr,
                 b"operation not permitted: sandbox denied",
             )],
