@@ -430,16 +430,17 @@ pub async fn run_main_with_transport_options(
         )
     })?;
     let codex_home = find_codex_home()?;
-    let environment_manager = Arc::new(
-        EnvironmentManager::from_codex_home(
-            codex_home.clone(),
-            ExecServerRuntimePaths::from_optional_paths(
-                arg0_paths.codex_self_exe.clone(),
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-            )?,
-        )
-        .map_err(std::io::Error::other)?,
-    );
+    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+        arg0_paths.codex_self_exe.clone(),
+        arg0_paths.codex_linux_sandbox_exe.clone(),
+    )?;
+    let environment_manager = if loader_overrides.ignore_user_config {
+        EnvironmentManager::from_env(local_runtime_paths)
+    } else {
+        EnvironmentManager::from_codex_home(codex_home.clone(), local_runtime_paths)
+    }
+    .map(Arc::new)
+    .map_err(std::io::Error::other)?;
     let config_manager = ConfigManager::new(
         codex_home.to_path_buf(),
         cli_kv_overrides.clone(),

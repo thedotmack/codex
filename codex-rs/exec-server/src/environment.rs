@@ -81,13 +81,21 @@ impl EnvironmentManager {
     ///
     /// If `CODEX_HOME/environments.toml` is present, it defines the configured
     /// environments. Otherwise this preserves the legacy
-    /// `CODEX_EXEC_SERVER_URL` behavior.
+    /// `CODEX_EXEC_SERVER_URL` behavior. Callers that ignore user config
+    /// should use [`Self::from_env`] instead.
     pub fn from_codex_home(
         codex_home: impl AsRef<std::path::Path>,
         local_runtime_paths: ExecServerRuntimePaths,
     ) -> Result<Self, ExecServerError> {
         let provider = environment_provider_from_codex_home(codex_home.as_ref())?;
         Self::from_provider(provider.as_ref(), local_runtime_paths)
+    }
+
+    /// Builds a manager from the legacy environment-variable provider without
+    /// reading user config files from `CODEX_HOME`.
+    pub fn from_env(local_runtime_paths: ExecServerRuntimePaths) -> Result<Self, ExecServerError> {
+        let provider = DefaultEnvironmentProvider::from_env();
+        Self::from_provider(&provider, local_runtime_paths)
     }
 
     fn from_default_provider_url(

@@ -502,6 +502,11 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         arg0_paths.codex_self_exe.clone(),
         arg0_paths.codex_linux_sandbox_exe.clone(),
     )?;
+    let environment_manager = if run_loader_overrides.ignore_user_config {
+        EnvironmentManager::from_env(local_runtime_paths)?
+    } else {
+        EnvironmentManager::from_codex_home(config.codex_home.clone(), local_runtime_paths)?
+    };
     let in_process_start_args = InProcessClientStartArgs {
         arg0_paths,
         config: std::sync::Arc::new(config.clone()),
@@ -510,10 +515,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         cloud_requirements: run_cloud_requirements,
         feedback: CodexFeedback::new(),
         log_db: None,
-        environment_manager: std::sync::Arc::new(
-            EnvironmentManager::from_codex_home(config.codex_home.clone(), local_runtime_paths)
-                ?,
-        ),
+        environment_manager: std::sync::Arc::new(environment_manager),
         config_warnings,
         session_source: SessionSource::Exec,
         enable_codex_api_key_env: true,

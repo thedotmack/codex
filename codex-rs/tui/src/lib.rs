@@ -8,7 +8,7 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::find_codex_home;
-use crate::legacy_core::config::load_config_as_toml_with_cli_overrides;
+use crate::legacy_core::config::load_config_as_toml_with_cli_and_loader_overrides;
 use crate::legacy_core::config::resolve_oss_provider;
 use crate::legacy_core::format_exec_policy_error_with_source;
 use crate::legacy_core::windows_sandbox::WindowsSandboxLevelExt;
@@ -647,10 +647,10 @@ fn config_cwd_for_app_server_target(
     app_server_target: &AppServerTarget,
     environment_manager: &EnvironmentManager,
 ) -> std::io::Result<Option<AbsolutePathBuf>> {
-    if environment_manager
-        .default_environment()
-        .is_some_and(|environment| environment.is_remote())
-        || matches!(app_server_target, AppServerTarget::Remote { .. })
+    if matches!(app_server_target, AppServerTarget::Remote { .. })
+        || environment_manager
+            .default_environment()
+            .is_some_and(|environment| environment.is_remote())
     {
         return Ok(None);
     }
@@ -662,6 +662,14 @@ fn config_cwd_for_app_server_target(
         None => AbsolutePathBuf::current_dir(),
     }?;
     Ok(Some(cwd))
+}
+
+fn should_load_configured_environments(
+    loader_overrides: &LoaderOverrides,
+    app_server_target: &AppServerTarget,
+) -> bool {
+    !loader_overrides.ignore_user_config
+        && !matches!(app_server_target, AppServerTarget::Remote { .. })
 }
 
 fn latest_session_cwd_filter<'a>(
@@ -747,25 +755,28 @@ pub async fn run_main(
         }
     };
 
-    let environment_manager = Arc::new(
-        EnvironmentManager::from_codex_home(
-            codex_home.clone(),
-            ExecServerRuntimePaths::from_optional_paths(
-                arg0_paths.codex_self_exe.clone(),
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-            )?,
-        )
-        .map_err(std::io::Error::other)?,
-    );
+    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+        arg0_paths.codex_self_exe.clone(),
+        arg0_paths.codex_linux_sandbox_exe.clone(),
+    )?;
+    let environment_manager =
+        if should_load_configured_environments(&loader_overrides, &app_server_target) {
+            EnvironmentManager::from_codex_home(codex_home.clone(), local_runtime_paths)
+        } else {
+            EnvironmentManager::from_env(local_runtime_paths)
+        }
+        .map(Arc::new)
+        .map_err(std::io::Error::other)?;
     let cwd = cli.cwd.clone();
     let config_cwd =
         config_cwd_for_app_server_target(cwd.as_deref(), &app_server_target, &environment_manager)?;
 
     #[allow(clippy::print_stderr)]
-    let config_toml = match load_config_as_toml_with_cli_overrides(
+    let config_toml = match load_config_as_toml_with_cli_and_loader_overrides(
         &codex_home,
         config_cwd.as_ref(),
         cli_kv_overrides.clone(),
+        loader_overrides.clone(),
     )
     .await
     {
@@ -1853,6 +1864,33 @@ mod tests {
 
         assert_eq!(config_cwd, None);
         Ok(())
+    }
+
+    #[test]
+    fn configured_environment_loading_is_embedded_only_user_config() {
+        let embedded = AppServerTarget::Embedded;
+        let remote = AppServerTarget::Remote {
+            websocket_url: "ws://127.0.0.1:1234/".to_string(),
+            auth_token: None,
+        };
+        let loader_overrides = LoaderOverrides::default();
+        let ignored_user_config = LoaderOverrides {
+            ignore_user_config: true,
+            ..Default::default()
+        };
+
+        assert!(should_load_configured_environments(
+            &loader_overrides,
+            &embedded
+        ));
+        assert!(!should_load_configured_environments(
+            &ignored_user_config,
+            &embedded
+        ));
+        assert!(!should_load_configured_environments(
+            &loader_overrides,
+            &remote
+        ));
     }
 
     #[tokio::test]

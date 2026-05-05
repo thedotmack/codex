@@ -109,9 +109,10 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         config.codex_linux_sandbox_exe.clone(),
     )?;
     let thread_store = thread_store_from_config(&config);
-    let environment_manager = Arc::new(
-        EnvironmentManager::from_codex_home(config.codex_home.clone(), local_runtime_paths)?,
-    );
+    let environment_manager = Arc::new(EnvironmentManager::from_codex_home(
+        config.codex_home.clone(),
+        local_runtime_paths,
+    )?);
     let thread_manager = ThreadManager::new(
         &config,
         auth_manager,
