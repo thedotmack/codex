@@ -26,8 +26,7 @@ use crate::tools::handlers::implicit_granted_permissions;
 use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
-use crate::tools::handlers::resolve_environment_workdir_target;
-use crate::tools::handlers::resolve_workdir_base_path;
+use crate::tools::handlers::resolve_environment_target;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::PostToolUsePayload;
@@ -109,10 +108,11 @@ impl ShellHandler {
         params: &ShellToolCallParams,
         turn_context: &TurnContext,
         thread_id: ThreadId,
+        cwd: codex_utils_absolute_path::AbsolutePathBuf,
     ) -> ExecParams {
         ExecParams {
             command: params.command.clone(),
-            cwd: turn_context.resolve_path(params.workdir.clone()),
+            cwd,
             expiration: params.timeout_ms.into(),
             capture_policy: ExecCapturePolicy::ShellTool,
             env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
@@ -254,7 +254,7 @@ impl ToolHandler for ShellHandler {
         let params: ShellToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
         let prefix_rule = params.prefix_rule.clone();
         let exec_params =
-            ShellHandler::to_exec_params(&params, turn.as_ref(), session.conversation_id);
+            ShellHandler::to_exec_params(&params, turn.as_ref(), session.conversation_id, cwd);
         ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name: "shell".to_string(),
             exec_params,
@@ -341,7 +341,7 @@ impl ToolHandler for ContainerExecHandler {
         let params: ShellToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
         let prefix_rule = params.prefix_rule.clone();
         let exec_params =
-            ShellHandler::to_exec_params(&params, turn.as_ref(), session.conversation_id);
+            ShellHandler::to_exec_params(&params, turn.as_ref(), session.conversation_id, cwd);
         ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name: "container.exec".to_string(),
             exec_params,
@@ -430,8 +430,12 @@ impl ToolHandler for LocalShellHandler {
             ));
         };
 
-        let exec_params =
-            ShellHandler::to_exec_params(&params, turn.as_ref(), session.conversation_id);
+        let exec_params = ShellHandler::to_exec_params(
+            &params,
+            turn.as_ref(),
+            session.conversation_id,
+            turn.resolve_path(params.workdir.clone()),
+        );
         ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name: "local_shell".to_string(),
             exec_params,
@@ -556,7 +560,7 @@ impl ToolHandler for ShellCommandHandler {
         };
 
         let Some((turn_environment, cwd)) =
-            resolve_environment_workdir_target(&arguments, &turn.environments)?
+            resolve_environment_target(&arguments, &turn.environments)?
         else {
             return Err(FunctionCallError::RespondToModel(
                 "shell is unavailable in this session".to_string(),

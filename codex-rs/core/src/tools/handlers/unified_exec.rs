@@ -13,7 +13,7 @@ use crate::tools::handlers::implicit_granted_permissions;
 use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
-use crate::tools::handlers::resolve_environment_workdir_target;
+use crate::tools::handlers::resolve_environment_target;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
@@ -182,7 +182,7 @@ impl ToolHandler for ExecCommandHandler {
         let manager: &UnifiedExecProcessManager = &session.services.unified_exec_manager;
         let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone());
         let Some((turn_environment, cwd)) =
-            resolve_environment_workdir_target(&arguments, &turn.environments)?
+            resolve_environment_target(&arguments, &turn.environments)?
         else {
             return Err(FunctionCallError::RespondToModel(
                 "unified exec is unavailable in this session".to_string(),

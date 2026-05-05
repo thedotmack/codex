@@ -94,7 +94,7 @@ fn resolve_workdir_base_path(
 }
 
 #[derive(Debug, Deserialize)]
-struct EnvironmentWorkdirArgs {
+struct EnvironmentTargetArgs {
     #[serde(default)]
     environment_id: Option<String>,
     // Keep this raw until after environment selection; relative paths must be
@@ -108,12 +108,13 @@ struct EnvironmentWorkdirArgs {
 /// Returns the selected turn environment plus the effective execution cwd. The
 /// returned cwd is `turn_environment.cwd.join(workdir)` when `workdir` is
 /// provided and non-empty, otherwise it is the selected `turn_environment.cwd`.
-fn resolve_environment_workdir_target(
+fn resolve_environment_target(
     arguments: &str,
     environments: &ResolvedTurnEnvironments,
 ) -> Result<Option<(TurnEnvironment, AbsolutePathBuf)>, FunctionCallError> {
-    let target_args: EnvironmentWorkdirArgs = parse_arguments(arguments)?;
-    let Some(turn_environment) = environments.select(target_args.environment_id.as_deref()) else {
+    let target_args: EnvironmentTargetArgs = parse_arguments(arguments)?;
+    let Some(turn_environment) = environments.get_or_primary(target_args.environment_id.as_deref())
+    else {
         return Ok(None);
     };
     let cwd = target_args

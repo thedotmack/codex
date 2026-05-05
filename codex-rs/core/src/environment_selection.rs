@@ -41,14 +41,17 @@ impl ResolvedTurnEnvironments {
         self.turn_environments.first()
     }
 
-    pub(crate) fn get(&self, environment_id: &str) -> Option<&TurnEnvironment> {
+    pub(crate) fn get_by_id(&self, environment_id: &str) -> Option<&TurnEnvironment> {
         self.turn_environments
             .iter()
             .find(|environment| environment.environment_id == environment_id)
     }
 
-    pub(crate) fn select(&self, environment_id: Option<&str>) -> Option<&TurnEnvironment> {
-        environment_id.map_or_else(|| self.primary(), |environment_id| self.get(environment_id))
+    pub(crate) fn get_or_primary(&self, environment_id: Option<&str>) -> Option<&TurnEnvironment> {
+        environment_id.map_or_else(
+            || self.primary(),
+            |environment_id| self.get_by_id(environment_id),
+        )
     }
 
     pub(crate) fn primary_environment(&self) -> Option<Arc<codex_exec_server::Environment>> {
@@ -189,7 +192,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolved_environment_selections_selects_by_id_or_primary() {
+    async fn resolved_environment_selections_gets_by_id_or_primary() {
         let cwd = AbsolutePathBuf::current_dir().expect("cwd");
         let manager = EnvironmentManager::default_for_tests();
 
@@ -204,18 +207,18 @@ mod tests {
 
         assert_eq!(
             resolved
-                .select(/*environment_id*/ None)
+                .get_or_primary(/*environment_id*/ None)
                 .expect("primary environment")
                 .environment_id,
             "local"
         );
         assert_eq!(
             resolved
-                .select(Some("local"))
+                .get_or_primary(Some("local"))
                 .expect("selected environment")
                 .environment_id,
             "local"
         );
-        assert!(resolved.select(Some("unknown")).is_none());
+        assert!(resolved.get_or_primary(Some("unknown")).is_none());
     }
 }
