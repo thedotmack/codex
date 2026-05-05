@@ -289,8 +289,10 @@ fn shell_output(
 mod tests {
     use super::*;
     use codex_exec_server::Environment;
+    use codex_exec_server::ExecEnvPolicy;
     use codex_exec_server::ExecOutputStream;
     use codex_exec_server::ProcessOutputChunk;
+    use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
     use pretty_assertions::assert_eq;
     use std::collections::VecDeque;
     use std::sync::Mutex;
@@ -356,29 +358,47 @@ mod tests {
         }
     }
 
+    fn read_response(
+        chunks: Vec<ProcessOutputChunk>,
+        next_seq: u64,
+        exited: bool,
+        exit_code: Option<i32>,
+        closed: bool,
+        failure: Option<String>,
+    ) -> ReadResponse {
+        ReadResponse {
+            chunks,
+            next_seq,
+            exited,
+            exit_code,
+            closed,
+            failure,
+        }
+    }
+
     #[tokio::test]
     async fn remote_shell_executor_collects_output_until_closed() {
         let executor = test_executor(/*timeout_ms*/ None);
         let process = FakeRemoteShellProcess::new(vec![
-            ReadResponse {
-                chunks: vec![
+            read_response(
+                vec![
                     chunk(1, ExecOutputStream::Stdout, b"hello "),
                     chunk(2, ExecOutputStream::Stderr, b"warn"),
                 ],
-                next_seq: 3,
-                exited: false,
-                exit_code: None,
-                closed: false,
-                failure: None,
-            },
-            ReadResponse {
-                chunks: vec![chunk(3, ExecOutputStream::Stdout, b"world")],
-                next_seq: 4,
-                exited: true,
-                exit_code: Some(0),
-                closed: true,
-                failure: None,
-            },
+                /*next_seq*/ 3,
+                /*exited*/ false,
+                /*exit_code*/ None,
+                /*closed*/ false,
+                /*failure*/ None,
+            ),
+            read_response(
+                vec![chunk(3, ExecOutputStream::Stdout, b"world")],
+                /*next_seq*/ 4,
+                /*exited*/ true,
+                /*exit_code*/ Some(0),
+                /*closed*/ true,
+                /*failure*/ None,
+            ),
         ]);
 
         let output = executor
@@ -408,5 +428,146 @@ mod tests {
             ToolError::Codex(CodexErr::Sandbox(SandboxErr::Timeout { .. })) => {}
             other => panic!("expected timeout error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn remote_shell_executor_rejects_exec_backend_failure() {
+        let executor = test_executor(/*timeout_ms*/ None);
+        let process = FakeRemoteShellProcess::new(vec![read_response(
+            Vec::new(),
+            /*next_seq*/ 1,
+            /*exited*/ false,
+            /*exit_code*/ None,
+            /*closed*/ false,
+            /*failure*/ Some("backend disconnected".to_string()),
+        )]);
+
+        let err = executor
+            .run_with_process(&process)
+            .await
+            .expect_err("remote exec failure should fail");
+
+        match err {
+            ToolError::Rejected(message) => assert_eq!(message, "backend disconnected"),
+            other => panic!("expected rejected error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_shell_executor_terminates_on_network_denial_cancellation() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let executor = RemoteShellExecutor {
+            environment: Arc::new(Environment::default_for_tests()),
+            call_id: "call-1".to_string(),
+            timeout_ms: None,
+            sandbox: SandboxType::None,
+            stdout_stream: None,
+            network_denial_cancellation_token: Some(cancellation),
+        };
+        let process = FakeRemoteShellProcess::new(Vec::new());
+
+        let err = executor
+            .run_with_process(&process)
+            .await
+            .expect_err("network denial should fail");
+
+        assert!(process.terminated());
+        match err {
+            ToolError::Rejected(message) => assert_eq!(
+                message,
+                "Network access was denied by the Codex sandbox network proxy."
+            ),
+            other => panic!("expected rejected error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_shell_executor_maps_likely_sandbox_denials() {
+        let executor = RemoteShellExecutor {
+            environment: Arc::new(Environment::default_for_tests()),
+            call_id: "call-1".to_string(),
+            timeout_ms: None,
+            sandbox: SandboxType::LinuxSeccomp,
+            stdout_stream: None,
+            network_denial_cancellation_token: None,
+        };
+        let process = FakeRemoteShellProcess::new(vec![read_response(
+            vec![chunk(
+                1,
+                ExecOutputStream::Stderr,
+                b"operation not permitted: sandbox denied",
+            )],
+            /*next_seq*/ 2,
+            /*exited*/ true,
+            /*exit_code*/ Some(1),
+            /*closed*/ true,
+            /*failure*/ None,
+        )]);
+
+        let err = executor
+            .run_with_process(&process)
+            .await
+            .expect_err("sandbox denial should fail");
+
+        match err {
+            ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied { .. })) => {}
+            other => panic!("expected sandbox denied error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exec_server_params_use_env_policy_overlay_contract() {
+        let cwd: codex_utils_absolute_path::AbsolutePathBuf = std::env::current_dir()
+            .expect("current dir")
+            .try_into()
+            .expect("absolute path");
+        let request = ExecRequest {
+            command: vec!["bash".to_string(), "-lc".to_string(), "true".to_string()],
+            cwd: cwd.clone(),
+            env: HashMap::from([
+                ("HOME".to_string(), "/client-home".to_string()),
+                ("PATH".to_string(), "/sandbox-path".to_string()),
+                ("CODEX_THREAD_ID".to_string(), "thread-1".to_string()),
+            ]),
+            exec_server_env_config: Some(crate::sandboxing::ExecServerEnvConfig {
+                policy: ExecEnvPolicy {
+                    inherit: ShellEnvironmentPolicyInherit::Core,
+                    ignore_default_excludes: false,
+                    exclude: Vec::new(),
+                    r#set: HashMap::new(),
+                    include_only: Vec::new(),
+                },
+                local_policy_env: HashMap::from([
+                    ("HOME".to_string(), "/client-home".to_string()),
+                    ("PATH".to_string(), "/client-path".to_string()),
+                ]),
+            }),
+            network: None,
+            expiration: crate::exec::ExecExpiration::DefaultTimeout,
+            capture_policy: crate::exec::ExecCapturePolicy::ShellTool,
+            sandbox: SandboxType::None,
+            windows_sandbox_policy_cwd: cwd,
+            windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
+            windows_sandbox_private_desktop: false,
+            permission_profile: codex_protocol::models::PermissionProfile::Disabled,
+            file_system_sandbox_policy:
+                codex_protocol::permissions::FileSystemSandboxPolicy::unrestricted(),
+            network_sandbox_policy: codex_protocol::permissions::NetworkSandboxPolicy::Restricted,
+            windows_sandbox_filesystem_overrides: None,
+            arg0: None,
+        };
+
+        let params = exec_server_params_for_request(&request, "call-123");
+
+        assert_eq!(params.process_id.as_str(), "call-123");
+        assert!(params.env_policy.is_some());
+        assert_eq!(
+            params.env,
+            HashMap::from([
+                ("PATH".to_string(), "/sandbox-path".to_string()),
+                ("CODEX_THREAD_ID".to_string(), "thread-1".to_string()),
+            ])
+        );
     }
 }

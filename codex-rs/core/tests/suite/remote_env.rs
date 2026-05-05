@@ -229,6 +229,40 @@ async fn shell_command_routing_output(
         .with_context(|| format!("missing function_call_output for {call_id}"))
 }
 
+async fn shell_command_response_mock(
+    test: &TestCodex,
+    server: &wiremock::MockServer,
+    call_id: &str,
+    arguments: Value,
+    environments: Option<Vec<TurnEnvironmentSelection>>,
+) -> Result<core_test_support::responses::ResponseMock> {
+    let response_mock = mount_sse_sequence(
+        server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_function_call(
+                    call_id,
+                    "shell_command",
+                    &serde_json::to_string(&arguments)?,
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn_with_environments("route shell command", environments)
+        .await?;
+
+    Ok(response_mock)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_command_routes_to_selected_remote_environment() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -444,6 +478,88 @@ async fn shell_command_resolves_relative_workdir_in_selected_remote_environment(
         !output.contains("local-routing"),
         "shell_command should resolve workdir in the selected remote environment: {output}",
     );
+
+    test.fs()
+        .remove(
+            &remote_cwd,
+            RemoveOptions {
+                recursive: true,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_command_timeout_in_selected_remote_environment() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let Some(_remote_env) = get_remote_test_env() else {
+        return Ok(());
+    };
+
+    let server = start_mock_server().await;
+    let test = shell_command_test(&server).await?;
+    let local_cwd = TempDir::new()?;
+    let local_selection = TurnEnvironmentSelection {
+        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+        cwd: local_cwd.path().abs(),
+    };
+    let remote_cwd = PathBuf::from(format!(
+        "/tmp/codex-shell-remote-timeout-{}",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+    ))
+    .abs();
+    test.fs()
+        .create_directory(
+            &remote_cwd,
+            CreateDirectoryOptions { recursive: true },
+            /*sandbox*/ None,
+        )
+        .await?;
+    let remote_selection = TurnEnvironmentSelection {
+        environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+        cwd: remote_cwd.clone(),
+    };
+
+    let response_mock = shell_command_response_mock(
+        &test,
+        &server,
+        "call-shell-remote-timeout",
+        json!({
+            "command": "sleep 1",
+            "login": false,
+            "timeout_ms": 50,
+            "environment_id": REMOTE_ENVIRONMENT_ID,
+        }),
+        Some(vec![local_selection, remote_selection]),
+    )
+    .await?;
+
+    let output_str = response_mock
+        .function_call_output_text("call-shell-remote-timeout")
+        .expect("timeout output string");
+
+    if let Ok(output_json) = serde_json::from_str::<Value>(&output_str) {
+        assert_eq!(
+            output_json["metadata"]["exit_code"].as_i64(),
+            Some(124),
+            "expected timeout exit code 124",
+        );
+        let stdout = output_json["output"].as_str().unwrap_or_default();
+        assert!(
+            stdout.contains("command timed out"),
+            "timeout output missing `command timed out`: {stdout}"
+        );
+    } else {
+        let lower = output_str.to_lowercase();
+        assert!(
+            lower.contains("timed out") || lower.contains("signal"),
+            "unexpected timeout output: {output_str}",
+        );
+    }
 
     test.fs()
         .remove(

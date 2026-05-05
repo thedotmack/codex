@@ -304,6 +304,9 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
             .map_err(|err| ToolError::Codex(err.into()))?;
         exec_env.exec_server_env_config = req.exec_server_env_config.clone();
         let out = if req.environment.is_remote() {
+            // TODO: unify this remote path with unified-exec's exec-backend flow
+            // so shell and unified-exec do not maintain separate local-vs-remote
+            // execution splits here.
             remote_exec::RemoteShellExecutor::new(req, &exec_env, attempt, ctx)
                 .run(exec_env)
                 .await?

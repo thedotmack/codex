@@ -430,6 +430,10 @@ impl ToolHandler for LocalShellHandler {
             ));
         };
 
+        // `LocalShell` is an internal payload with already-parsed params, not a
+        // model-facing JSON tool call. It does not carry raw `environment_id` /
+        // `workdir` arguments, so there is nothing to resolve through
+        // `resolve_environment_target(...)` here.
         let exec_params = ShellHandler::to_exec_params(
             &params,
             turn.as_ref(),
