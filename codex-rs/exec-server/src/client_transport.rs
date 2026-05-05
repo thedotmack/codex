@@ -21,7 +21,7 @@ const ENVIRONMENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const ENVIRONMENT_INITIALIZE_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl ExecServerClient {
-    pub(crate) async fn connect_for_environment(
+    pub(crate) async fn connect_for_transport(
         transport: crate::client_api::ExecServerTransport,
     ) -> Result<Self, ExecServerError> {
         match transport {

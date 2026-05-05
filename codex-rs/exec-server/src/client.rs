@@ -153,8 +153,8 @@ pub(crate) struct Session {
 
 struct Inner {
     client: RpcClient,
-    // Keep the connection alive for any transport-specific owned state such as
-    // the stdio child process. RpcClient only takes the runtime channels/tasks.
+    // Keep the underlying transport connection alive. RpcClient only takes the
+    // runtime channels/tasks it needs to drive the JSON-RPC client.
     _connection: JsonRpcConnection,
     // The remote transport delivers one shared notification stream for every
     // process on the connection. Keep a local process_id -> session registry so
@@ -208,9 +208,11 @@ impl LazyRemoteExecServerClient {
 
     pub(crate) async fn get(&self) -> Result<ExecServerClient, ExecServerError> {
         self.client
+            // TODO: Add reconnect/disconnect handling here instead of reusing
+            // the first successfully initialized connection forever.
             .get_or_try_init(|| {
                 let transport = self.transport.clone();
-                async move { ExecServerClient::connect_for_environment(transport).await }
+                async move { ExecServerClient::connect_for_transport(transport).await }
             })
             .await
             .cloned()
