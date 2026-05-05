@@ -2533,6 +2533,7 @@ mod tests {
                 )]
                 .into_iter()
                 .collect(),
+                cwd: None,
                 reason: None,
                 grant_root: None,
             }),

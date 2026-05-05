@@ -281,6 +281,7 @@ async fn run_codex_tool_session_inner(
                         reason,
                         grant_root,
                         changes,
+                        cwd: _,
                     }) => {
                         handle_patch_approval_request(
                             call_id,
