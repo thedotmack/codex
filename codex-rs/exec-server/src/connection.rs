@@ -24,24 +24,33 @@ pub(crate) enum JsonRpcConnectionEvent {
     Disconnected { reason: Option<String> },
 }
 
-#[derive(Default)]
-struct JsonRpcTransport {
-    child_process: Option<Child>,
+enum JsonRpcTransport {
+    Plain,
+    Stdio(StdioTransport),
 }
 
 impl JsonRpcTransport {
-    fn with_child_process(child_process: Child) -> Self {
-        Self {
-            child_process: Some(child_process),
-        }
+    fn from_child_process(child_process: Child) -> Self {
+        Self::Stdio(StdioTransport { child_process })
     }
 }
 
 impl Drop for JsonRpcTransport {
     fn drop(&mut self) {
-        if let Some(child_process) = self.child_process.as_mut()
-            && let Err(err) = child_process.start_kill()
-        {
+        match self {
+            Self::Plain => {}
+            Self::Stdio(transport) => transport.shutdown(),
+        }
+    }
+}
+
+struct StdioTransport {
+    child_process: Child,
+}
+
+impl StdioTransport {
+    fn shutdown(&mut self) {
+        if let Err(err) = self.child_process.start_kill() {
             debug!("failed to terminate exec-server stdio child: {err}");
         }
     }
@@ -150,7 +159,7 @@ impl JsonRpcConnection {
                 disconnected_rx,
                 task_handles: vec![reader_task, writer_task],
             }),
-            transport: JsonRpcTransport::default(),
+            transport: JsonRpcTransport::Plain,
         }
     }
 
@@ -287,7 +296,7 @@ impl JsonRpcConnection {
                 disconnected_rx,
                 task_handles: vec![reader_task, writer_task],
             }),
-            transport: JsonRpcTransport::default(),
+            transport: JsonRpcTransport::Plain,
         }
     }
 
@@ -312,7 +321,7 @@ impl JsonRpcConnection {
     }
 
     pub(crate) fn with_child_process(mut self, child_process: Child) -> Self {
-        self.transport = JsonRpcTransport::with_child_process(child_process);
+        self.transport = JsonRpcTransport::from_child_process(child_process);
         self
     }
 
