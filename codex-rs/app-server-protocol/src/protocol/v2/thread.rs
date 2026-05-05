@@ -10,6 +10,7 @@ use super::Thread;
 use super::ThreadStartSource;
 use super::Turn;
 use super::TurnEnvironmentParams;
+use super::shared::v2_enum_from_core;
 use codex_experimental_api_macros::ExperimentalApi;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;

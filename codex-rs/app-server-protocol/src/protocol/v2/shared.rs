@@ -60,6 +60,8 @@ macro_rules! v2_enum_from_core {
     };
 }
 
+pub(super) use v2_enum_from_core;
+
 pub(super) const fn default_enabled() -> bool {
     true
 }

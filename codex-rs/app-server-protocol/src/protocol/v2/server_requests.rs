@@ -7,6 +7,7 @@ use super::GrantedPermissionProfile;
 use super::NetworkApprovalContext;
 use super::NetworkPolicyAmendment;
 use super::RequestPermissionProfile;
+use super::shared::v2_enum_from_core;
 use crate::RequestId;
 use codex_experimental_api_macros::ExperimentalApi;
 use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;

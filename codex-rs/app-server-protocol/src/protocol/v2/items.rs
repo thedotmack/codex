@@ -4,6 +4,7 @@ use super::MemoryCitation;
 use super::NetworkApprovalProtocol;
 use super::RequestPermissionProfile;
 use super::UserInput;
+use super::shared::v2_enum_from_core;
 use crate::protocol::item_builders::convert_patch_changes;
 use codex_protocol::approvals::GuardianAssessmentAction as CoreGuardianAssessmentAction;
 use codex_protocol::approvals::GuardianAssessmentDecisionSource as CoreGuardianAssessmentDecisionSource;
