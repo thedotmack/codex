@@ -1,6 +1,7 @@
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use crate::tool_spec::maybe_insert_environment_id_parameter;
 use codex_protocol::models::VIEW_IMAGE_TOOL_NAME;
 use serde_json::Value;
 use serde_json::json;
@@ -9,6 +10,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewImageToolOptions {
     pub can_request_original_image_detail: bool,
+    pub include_environment_id: bool,
 }
 
 pub fn create_view_image_tool(options: ViewImageToolOptions) -> ToolSpec {
@@ -24,6 +26,7 @@ pub fn create_view_image_tool(options: ViewImageToolOptions) -> ToolSpec {
             )),
         );
     }
+    maybe_insert_environment_id_parameter(&mut properties, options.include_environment_id);
 
     ToolSpec::Function(ResponsesApiTool {
         name: VIEW_IMAGE_TOOL_NAME.to_string(),

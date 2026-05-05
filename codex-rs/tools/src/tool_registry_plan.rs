@@ -392,6 +392,7 @@ pub fn build_tool_registry_plan(
         plan.push_spec(
             create_view_image_tool(ViewImageToolOptions {
                 can_request_original_image_detail: config.can_request_original_image_detail,
+                include_environment_id,
             }),
             /*supports_parallel_tool_calls*/ true,
             config.code_mode_enabled,
