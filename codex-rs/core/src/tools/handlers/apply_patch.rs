@@ -52,7 +52,9 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 
 const APPLY_PATCH_ARGUMENT_DIFF_BUFFER_INTERVAL: Duration = Duration::from_millis(500);
 const APPLY_PATCH_BEGIN_MARKER: &str = "*** Begin Patch\n";
-const APPLY_PATCH_ENVIRONMENT_ID_MARKER: &str = "*** Environment ID: ";
+const APPLY_PATCH_HEADER_PREFIX: &str = "*** ";
+const APPLY_PATCH_HEADER_SEPARATOR: &str = ": ";
+const APPLY_PATCH_ENVIRONMENT_ID_HEADER: &str = "Environment ID";
 
 pub struct ApplyPatchHandler;
 
@@ -61,7 +63,7 @@ struct ApplyPatchArgumentDiffConsumer {
     parser: StreamingPatchParser,
     last_sent_at: Option<Instant>,
     pending: Option<PatchApplyUpdatedEvent>,
-    metadata_stripper: ApplyPatchMetadataStripper,
+    header_stripper: ApplyPatchHeaderStripper,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -70,27 +72,24 @@ struct ResolvedApplyPatchInput {
     environment_id: Option<String>,
 }
 
-struct ApplyPatchMetadataStripper {
-    state: ApplyPatchMetadataStripperState,
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ApplyPatchHeaders {
+    environment_id: Option<String>,
 }
 
-enum ApplyPatchMetadataStripperState {
-    // Freeform apply_patch may start with an optional `*** Environment ID: ...`
-    // line. Streaming diffs can split that prefix across chunks, so we buffer
-    // only until we can decide whether to strip metadata or pass the bytes
-    // through to the patch parser unchanged.
+struct ApplyPatchHeaderStripper {
+    // Freeform apply_patch may start with optional `*** Header: value` lines.
+    // Streaming diffs can split that prefix across chunks, so we buffer only
+    // until the header block is stripped or the input is known not to use it.
     //
-    // `Prefix` owns that short-lived buffer. Once we either strip the metadata
-    // line or determine there is no metadata to strip, we switch to
-    // `Passthrough` and stop doing any special-case parsing for later chunks.
-    Prefix(String),
-    Passthrough,
+    // Patch operation lines such as `*** Add File: ...` are not headers.
+    buffer: Option<String>,
 }
 
-impl Default for ApplyPatchMetadataStripper {
+impl Default for ApplyPatchHeaderStripper {
     fn default() -> Self {
         Self {
-            state: ApplyPatchMetadataStripperState::Prefix(String::new()),
+            buffer: Some(String::new()),
         }
     }
 }
@@ -118,7 +117,7 @@ impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
 
 impl ApplyPatchArgumentDiffConsumer {
     fn push_delta(&mut self, call_id: String, delta: &str) -> Option<PatchApplyUpdatedEvent> {
-        let delta = self.metadata_stripper.push(delta)?;
+        let delta = self.header_stripper.push(delta)?;
         let hunks = self.parser.push_delta(&delta).ok()?;
         if hunks.is_empty() {
             return None;
@@ -144,7 +143,7 @@ impl ApplyPatchArgumentDiffConsumer {
     fn finish_update_on_complete(
         &mut self,
     ) -> Result<Option<PatchApplyUpdatedEvent>, FunctionCallError> {
-        if let Some(delta) = self.metadata_stripper.finish()? {
+        if let Some(delta) = self.header_stripper.finish() {
             self.parser.push_delta(&delta).map_err(|err| {
                 FunctionCallError::RespondToModel(format!("failed to parse apply_patch: {err}"))
             })?;
@@ -161,98 +160,119 @@ impl ApplyPatchArgumentDiffConsumer {
     }
 }
 
-impl ApplyPatchMetadataStripper {
+impl ApplyPatchHeaderStripper {
     fn push(&mut self, delta: &str) -> Option<String> {
-        let ApplyPatchMetadataStripperState::Prefix(buffer) = &mut self.state else {
+        let Some(buffer) = &mut self.buffer else {
             return Some(delta.to_string());
         };
-
         buffer.push_str(delta);
-        if !APPLY_PATCH_BEGIN_MARKER.starts_with(buffer.as_str())
-            && !buffer.starts_with(APPLY_PATCH_BEGIN_MARKER)
-        {
-            let buffered = std::mem::take(buffer);
-            self.state = ApplyPatchMetadataStripperState::Passthrough;
-            return Some(buffered);
-        }
 
-        let Some(rest) = buffer.as_str().strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
-            return None;
-        };
-        if rest.is_empty() || APPLY_PATCH_ENVIRONMENT_ID_MARKER.starts_with(rest) {
-            return None;
-        }
-
-        if let Some(after_marker) = rest.strip_prefix(APPLY_PATCH_ENVIRONMENT_ID_MARKER) {
-            let Some((_environment_id, patch_rest)) = after_marker.split_once('\n') else {
-                return None;
-            };
-            let patch = format!("{APPLY_PATCH_BEGIN_MARKER}{patch_rest}");
-            self.state = ApplyPatchMetadataStripperState::Passthrough;
-            return Some(patch);
-        }
-        let buffered = std::mem::take(buffer);
-        self.state = ApplyPatchMetadataStripperState::Passthrough;
-        Some(buffered)
+        let patch = strip_buffered_apply_patch_headers(buffer, /*complete*/ false)?;
+        self.buffer = None;
+        (!patch.is_empty()).then_some(patch)
     }
 
-    fn finish(&mut self) -> Result<Option<String>, FunctionCallError> {
-        match std::mem::replace(
-            &mut self.state,
-            ApplyPatchMetadataStripperState::Passthrough,
-        ) {
-            ApplyPatchMetadataStripperState::Prefix(buffer) => Ok(Some(buffer)),
-            ApplyPatchMetadataStripperState::Passthrough => Ok(None),
+    fn finish(&mut self) -> Option<String> {
+        let buffer = self.buffer.take()?;
+        strip_buffered_apply_patch_headers(&buffer, /*complete*/ true)
+    }
+}
+
+fn strip_buffered_apply_patch_headers(buffer: &str, complete: bool) -> Option<String> {
+    if !buffer.starts_with(APPLY_PATCH_BEGIN_MARKER) {
+        if !complete && APPLY_PATCH_BEGIN_MARKER.starts_with(buffer) {
+            return None;
         }
+        return Some(buffer.to_string());
+    }
+
+    let rest = buffer.strip_prefix(APPLY_PATCH_BEGIN_MARKER)?;
+    let body_start = apply_patch_body_start_after_headers(rest, complete)?;
+    Some(format!("{APPLY_PATCH_BEGIN_MARKER}{}", &rest[body_start..]))
+}
+
+fn apply_patch_body_start_after_headers(mut rest: &str, complete: bool) -> Option<usize> {
+    let mut body_start = 0;
+    loop {
+        let Some(line_end) = rest.find('\n') else {
+            return complete.then_some(body_start);
+        };
+        let line = &rest[..line_end];
+        if parse_apply_patch_header_line(line).is_none() {
+            return Some(body_start);
+        }
+        body_start += line_end + 1;
+        rest = &rest[line_end + 1..];
+    }
+}
+
+fn parse_apply_patch_header_line(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix(APPLY_PATCH_HEADER_PREFIX)?;
+    let (name, value) = rest.split_once(APPLY_PATCH_HEADER_SEPARATOR)?;
+    if matches!(name, "Add File" | "Delete File" | "Update File" | "Move to") {
+        return None;
+    }
+    Some((name, value))
+}
+
+fn strip_apply_patch_headers(
+    input: String,
+) -> Result<(String, ApplyPatchHeaders), FunctionCallError> {
+    let Some(mut rest) = input.strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
+        return Ok((input, ApplyPatchHeaders::default()));
+    };
+    let mut headers = ApplyPatchHeaders::default();
+
+    loop {
+        let Some(line_end) = rest.find('\n') else {
+            if parse_apply_patch_header_line(rest).is_some() {
+                return Err(FunctionCallError::RespondToModel(
+                    "apply_patch header metadata must end with a newline".to_string(),
+                ));
+            }
+            return Ok((input, headers));
+        };
+        let line = &rest[..line_end];
+        let Some((name, value)) = parse_apply_patch_header_line(line) else {
+            return Ok((format!("{APPLY_PATCH_BEGIN_MARKER}{rest}"), headers));
+        };
+        if name == APPLY_PATCH_ENVIRONMENT_ID_HEADER {
+            if value.is_empty() {
+                return Err(FunctionCallError::RespondToModel(
+                    "environment_id cannot be empty".to_string(),
+                ));
+            }
+            headers.environment_id = Some(value.to_string());
+        }
+        rest = &rest[line_end + 1..];
     }
 }
 
 fn parse_freeform_apply_patch_input(
     input: String,
 ) -> Result<ResolvedApplyPatchInput, FunctionCallError> {
-    let Some(rest) = input.strip_prefix(APPLY_PATCH_BEGIN_MARKER) else {
-        return Ok(ResolvedApplyPatchInput {
-            patch: input,
-            environment_id: None,
-        });
-    };
-    let Some(after_marker) = rest.strip_prefix(APPLY_PATCH_ENVIRONMENT_ID_MARKER) else {
-        return Ok(ResolvedApplyPatchInput {
-            patch: input,
-            environment_id: None,
-        });
-    };
-    let Some((environment_id, patch_rest)) = after_marker.split_once('\n') else {
-        return Err(FunctionCallError::RespondToModel(
-            "apply_patch environment metadata must end with a newline".to_string(),
-        ));
-    };
-    if environment_id.is_empty() {
-        return Err(FunctionCallError::RespondToModel(
-            "environment_id cannot be empty".to_string(),
-        ));
-    }
+    let (patch, headers) = strip_apply_patch_headers(input)?;
     Ok(ResolvedApplyPatchInput {
-        patch: format!("{APPLY_PATCH_BEGIN_MARKER}{patch_rest}"),
-        environment_id: Some(environment_id.to_string()),
+        patch,
+        environment_id: headers.environment_id,
     })
 }
 
 fn merge_apply_patch_environment_ids(
     argument_environment_id: Option<String>,
-    metadata_environment_id: Option<String>,
+    header_environment_id: Option<String>,
 ) -> Result<Option<String>, FunctionCallError> {
-    match (argument_environment_id, metadata_environment_id) {
-        (Some(argument_environment_id), Some(metadata_environment_id))
-            if argument_environment_id != metadata_environment_id =>
+    match (argument_environment_id, header_environment_id) {
+        (Some(argument_environment_id), Some(header_environment_id))
+            if argument_environment_id != header_environment_id =>
         {
             Err(FunctionCallError::RespondToModel(
-                "apply_patch environment_id argument conflicts with patch environment metadata"
+                "apply_patch environment_id argument conflicts with patch header metadata"
                     .to_string(),
             ))
         }
         (Some(argument_environment_id), _) => Ok(Some(argument_environment_id)),
-        (None, metadata_environment_id) => Ok(metadata_environment_id),
+        (None, header_environment_id) => Ok(header_environment_id),
     }
 }
 
@@ -275,7 +295,7 @@ fn parse_function_apply_patch_input(
 /// - legacy apply_patch calls omit environment selection entirely
 /// - those continue to target the primary environment
 /// - routing only changes when an environment id is explicitly provided, either
-///   as a function argument or as freeform patch metadata
+///   as a function argument or as freeform patch header metadata
 fn resolve_apply_patch_input(
     payload: ToolPayload,
 ) -> Result<ResolvedApplyPatchInput, FunctionCallError> {
@@ -539,7 +559,10 @@ impl ToolHandler for ApplyPatchHandler {
         let environment = Arc::clone(&target_environment.environment);
         let fs = environment.get_filesystem();
         let sandbox = environment.is_remote().then(|| {
-            turn.file_system_sandbox_context_for_cwd(&cwd, /*additional_permissions*/ None)
+            let mut context =
+                turn.file_system_sandbox_context(/*additional_permissions*/ None);
+            context.cwd = Some(cwd.clone());
+            context
         });
         match codex_apply_patch::maybe_parse_apply_patch_verified(
             &command,

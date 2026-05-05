@@ -317,16 +317,6 @@ impl TurnContext {
         }
     }
 
-    pub(crate) fn file_system_sandbox_context_for_cwd(
-        &self,
-        cwd: &AbsolutePathBuf,
-        additional_permissions: Option<AdditionalPermissionProfile>,
-    ) -> FileSystemSandboxContext {
-        let mut context = self.file_system_sandbox_context(additional_permissions);
-        context.cwd = Some(cwd.clone());
-        context
-    }
-
     fn non_legacy_file_system_sandbox_policy(&self) -> Option<FileSystemSandboxPolicy> {
         // Omit the derived split filesystem policy when it is equivalent to
         // the legacy sandbox policy. This keeps turn-context payloads stable

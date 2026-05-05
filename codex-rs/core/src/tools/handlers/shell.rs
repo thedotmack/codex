@@ -707,10 +707,10 @@ impl ShellHandler {
 
         // Intercept apply_patch if present.
         let apply_patch_sandbox = environment.is_remote().then(|| {
-            turn.file_system_sandbox_context_for_cwd(
-                &exec_params.cwd,
-                /*additional_permissions*/ None,
-            )
+            let mut context =
+                turn.file_system_sandbox_context(/*additional_permissions*/ None);
+            context.cwd = Some(exec_params.cwd.clone());
+            context
         });
         if let Some(output) = intercept_apply_patch(
             &exec_params.command,

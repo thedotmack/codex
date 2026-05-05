@@ -12,6 +12,7 @@ use codex_protocol::config_types::WebSearchUserLocationType;
 use codex_protocol::openai_models::WebSearchToolType;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 const WEB_SEARCH_TEXT_AND_IMAGE_CONTENT_TYPES: [&str; 2] = ["text", "image"];
 
@@ -87,6 +88,21 @@ pub fn create_local_shell_tool() -> ToolSpec {
 pub fn create_image_generation_tool(output_format: &str) -> ToolSpec {
     ToolSpec::ImageGeneration {
         output_format: output_format.to_string(),
+    }
+}
+
+pub(crate) fn maybe_insert_environment_id_parameter(
+    properties: &mut BTreeMap<String, JsonSchema>,
+    include_environment_id: bool,
+) {
+    if include_environment_id {
+        properties.insert(
+            "environment_id".to_string(),
+            JsonSchema::string(Some(
+                "Optional selected environment id to target. Omit this to use the primary environment."
+                    .to_string(),
+            )),
+        );
     }
 }
 

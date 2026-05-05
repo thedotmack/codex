@@ -46,6 +46,16 @@ fn sample_patch_with_selected_environment_id() -> &'static str {
 *** End Patch"#
 }
 
+fn sample_move_patch() -> &'static str {
+    r#"*** Begin Patch
+*** Update File: old/name.txt
+*** Move to: renamed/name.txt
+@@
+-old
++new
+*** End Patch"#
+}
+
 #[derive(Clone, Copy)]
 enum ExpectedEnvironment {
     Primary,
@@ -117,7 +127,8 @@ fn set_two_local_turn_environments(
     selected_cwd: AbsolutePathBuf,
 ) {
     let environment = Arc::new(
-        codex_exec_server::Environment::create_for_tests(None).expect("create environment"),
+        codex_exec_server::Environment::create_for_tests(/*exec_server_url*/ None)
+            .expect("create environment"),
     );
     turn.cwd = primary_cwd.clone();
     turn.environments.turn_environments = vec![
@@ -206,7 +217,7 @@ async fn json_apply_patch_uses_selected_environment_cwd() {
 }
 
 #[tokio::test]
-async fn freeform_apply_patch_uses_selected_environment_metadata_cwd() {
+async fn freeform_apply_patch_uses_selected_environment_header_cwd() {
     let payload = ToolPayload::Custom {
         input: sample_patch_with_selected_environment_id().to_string(),
     };
@@ -214,7 +225,7 @@ async fn freeform_apply_patch_uses_selected_environment_metadata_cwd() {
 }
 
 #[test]
-fn parse_freeform_apply_patch_input_strips_environment_metadata() {
+fn parse_freeform_apply_patch_input_strips_environment_header() {
     let input = parse_freeform_apply_patch_input(sample_patch_with_environment_id().to_string())
         .expect("parse");
 
@@ -225,7 +236,7 @@ fn parse_freeform_apply_patch_input_strips_environment_metadata() {
 }
 
 #[test]
-fn parse_freeform_apply_patch_input_rejects_empty_environment_metadata() {
+fn parse_freeform_apply_patch_input_rejects_empty_environment_header() {
     let err = parse_freeform_apply_patch_input(
         "*** Begin Patch\n*** Environment ID: \n*** Add File: hello.txt\n+hello\n*** End Patch"
             .to_string(),
@@ -239,7 +250,96 @@ fn parse_freeform_apply_patch_input_rejects_empty_environment_metadata() {
 }
 
 #[test]
-fn parse_function_apply_patch_input_accepts_matching_metadata_and_argument() {
+fn parse_freeform_apply_patch_input_strips_generic_headers() {
+    let input = parse_freeform_apply_patch_input(
+        "*** Begin Patch\n*** Trace ID: trace-1\n*** Environment ID: remote\n*** Add File: hello.txt\n+hello\n*** End Patch"
+            .to_string(),
+    )
+    .expect("parse");
+
+    assert_eq!(
+        (input.environment_id, input.patch),
+        (Some("remote".to_string()), sample_patch().to_string())
+    );
+}
+
+#[test]
+fn parse_freeform_apply_patch_input_strips_multiple_generic_headers() {
+    let input = parse_freeform_apply_patch_input(
+        "*** Begin Patch\n*** Trace ID: trace-1\n*** Request ID: req-2\n*** Environment ID: remote\n*** Add File: hello.txt\n+hello\n*** End Patch"
+            .to_string(),
+    )
+    .expect("parse");
+
+    assert_eq!(
+        input,
+        ResolvedApplyPatchInput {
+            patch: sample_patch().to_string(),
+            environment_id: Some("remote".to_string()),
+        }
+    );
+}
+
+#[test]
+fn parse_freeform_apply_patch_input_rejects_unterminated_generic_header() {
+    let err =
+        parse_freeform_apply_patch_input("*** Begin Patch\n*** Trace ID: trace-1".to_string())
+            .expect_err("unterminated generic header should fail");
+
+    assert_eq!(
+        err.to_string(),
+        "apply_patch header metadata must end with a newline"
+    );
+}
+
+#[test]
+fn parse_freeform_apply_patch_input_preserves_patch_operation_lines() {
+    let input = parse_freeform_apply_patch_input(sample_patch().to_string()).expect("parse");
+
+    assert_eq!(
+        input,
+        ResolvedApplyPatchInput {
+            patch: sample_patch().to_string(),
+            environment_id: None,
+        }
+    );
+}
+
+#[test]
+fn parse_freeform_apply_patch_input_preserves_move_to_operation_line() {
+    let input = parse_freeform_apply_patch_input(sample_move_patch().to_string()).expect("parse");
+
+    assert_eq!(
+        input,
+        ResolvedApplyPatchInput {
+            patch: sample_move_patch().to_string(),
+            environment_id: None,
+        }
+    );
+}
+
+#[test]
+fn parse_function_apply_patch_input_accepts_argument_environment_without_header() {
+    let resolved = parse_function_apply_patch_input(
+        &json!({
+            "input": "*** Begin Patch\n*** Trace ID: trace-1\n*** Add File: hello.txt\n+hello\n*** End Patch",
+            "environment_id": "selected",
+        })
+        .to_string(),
+    )
+    .expect("parse");
+
+    assert_eq!(
+        resolved,
+        ResolvedApplyPatchInput {
+            patch: sample_patch().to_string(),
+            environment_id: Some("selected".to_string()),
+        }
+    );
+}
+
+#[test]
+fn parse_function_apply_patch_input_accepts_matching_header_and_argument() {
     let resolved = parse_function_apply_patch_input(
         &json!({
             "input": sample_patch_with_selected_environment_id(),
@@ -259,7 +359,7 @@ fn parse_function_apply_patch_input_accepts_matching_metadata_and_argument() {
 }
 
 #[test]
-fn parse_function_apply_patch_input_rejects_conflicting_metadata_and_argument() {
+fn parse_function_apply_patch_input_rejects_conflicting_header_and_argument() {
     let err = parse_function_apply_patch_input(
         &json!({
             "input": sample_patch_with_selected_environment_id(),
@@ -271,7 +371,7 @@ fn parse_function_apply_patch_input_rejects_conflicting_metadata_and_argument() 
 
     assert_eq!(
         err.to_string(),
-        "apply_patch environment_id argument conflicts with patch environment metadata"
+        "apply_patch environment_id argument conflicts with patch header metadata"
     );
 }
 
@@ -295,6 +395,32 @@ async fn legacy_freeform_apply_patch_without_environment_selection_uses_primary_
         ExpectedEnvironment::Primary,
     )
     .await;
+}
+
+#[test]
+fn strip_buffered_apply_patch_headers_waits_for_split_header_and_body_line() {
+    assert_eq!(
+        strip_buffered_apply_patch_headers(
+            "*** Begin Patch\n*** Trace ID: trace-1\n*** Add",
+            /*complete*/ false,
+        ),
+        None
+    );
+    assert_eq!(
+        strip_buffered_apply_patch_headers(
+            "*** Begin Patch\n*** Trace ID: trace-1\n*** Add File: hello.txt\n",
+            /*complete*/ false,
+        ),
+        Some("*** Begin Patch\n*** Add File: hello.txt\n".to_string())
+    );
+}
+
+#[test]
+fn strip_buffered_apply_patch_headers_passes_through_non_patch_input() {
+    assert_eq!(
+        strip_buffered_apply_patch_headers("{\"input\":\"*** Begin Patch", /*complete*/ false),
+        Some("{\"input\":\"*** Begin Patch".to_string())
+    );
 }
 
 #[test]
@@ -370,7 +496,7 @@ fn diff_consumer_streams_apply_patch_changes() {
 }
 
 #[test]
-fn diff_consumer_streams_apply_patch_changes_with_environment_metadata() {
+fn diff_consumer_streams_apply_patch_changes_with_header_metadata() {
     let mut consumer = ApplyPatchArgumentDiffConsumer::default();
     assert!(
         consumer
@@ -412,6 +538,34 @@ fn diff_consumer_streams_apply_patch_changes_with_environment_metadata() {
             PathBuf::from("hello.txt"),
             FileChange::Add {
                 content: "hello\n".to_string(),
+            },
+        )])
+    );
+}
+
+#[test]
+fn diff_consumer_buffers_split_header_metadata() {
+    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), "*** Begin Patch\n*** Environment ID:")
+            .is_none()
+    );
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), " remote\n")
+            .is_none()
+    );
+
+    let event = consumer
+        .push_delta("call-1".to_string(), "*** Add File: hello.txt\n+hello")
+        .expect("progress event");
+    assert_eq!(
+        event.changes,
+        HashMap::from([(
+            PathBuf::from("hello.txt"),
+            FileChange::Add {
+                content: String::new(),
             },
         )])
     );
