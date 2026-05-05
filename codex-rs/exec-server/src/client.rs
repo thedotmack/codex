@@ -152,10 +152,10 @@ pub(crate) struct Session {
 }
 
 struct Inner {
-    client: RpcClient,
-    // Keep the underlying transport connection alive. RpcClient only takes the
-    // runtime channels/tasks it needs to drive the JSON-RPC client.
+    // Keep the underlying transport connection alive and drop it before the RPC
+    // client starts tearing down its channel/task handles.
     _connection: JsonRpcConnection,
+    client: RpcClient,
     // The remote transport delivers one shared notification stream for every
     // process on the connection. Keep a local process_id -> session registry so
     // we can turn those connection-global notifications into process wakeups
@@ -453,8 +453,8 @@ impl ExecServerClient {
             });
 
             Inner {
-                client: rpc_client,
                 _connection: connection,
+                client: rpc_client,
                 sessions: ArcSwap::from_pointee(HashMap::new()),
                 sessions_write_lock: Mutex::new(()),
                 disconnected: OnceLock::new(),
