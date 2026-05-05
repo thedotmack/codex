@@ -80,6 +80,18 @@ where
     parse_arguments(arguments)
 }
 
+fn resolve_workdir_base_path(
+    arguments: &str,
+    cwd: &AbsolutePathBuf,
+) -> Result<AbsolutePathBuf, FunctionCallError> {
+    let target_args: EnvironmentTargetArgs = parse_arguments(arguments)?;
+    Ok(target_args
+        .workdir
+        .as_deref()
+        .filter(|workdir| !workdir.is_empty())
+        .map_or_else(|| cwd.clone(), |workdir| cwd.join(workdir)))
+}
+
 #[derive(Debug, Deserialize)]
 struct EnvironmentTargetArgs {
     #[serde(default)]
