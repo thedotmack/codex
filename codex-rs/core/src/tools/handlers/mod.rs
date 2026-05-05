@@ -24,7 +24,6 @@ use codex_sandboxing::policy_transforms::normalize_additional_permissions;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use serde::Deserialize;
-use serde_json::Value;
 use std::path::Path;
 
 use crate::environment_selection::ResolvedTurnEnvironments;
@@ -81,18 +80,6 @@ where
     parse_arguments(arguments)
 }
 
-fn resolve_workdir_base_path(
-    arguments: &str,
-    default_cwd: &AbsolutePathBuf,
-) -> Result<AbsolutePathBuf, FunctionCallError> {
-    let arguments: Value = parse_arguments(arguments)?;
-    Ok(arguments
-        .get("workdir")
-        .and_then(Value::as_str)
-        .filter(|workdir| !workdir.is_empty())
-        .map_or_else(|| default_cwd.clone(), |workdir| default_cwd.join(workdir)))
-}
-
 #[derive(Debug, Deserialize)]
 struct EnvironmentTargetArgs {
     #[serde(default)]
@@ -113,9 +100,18 @@ fn resolve_environment_target(
     environments: &ResolvedTurnEnvironments,
 ) -> Result<Option<(TurnEnvironment, AbsolutePathBuf)>, FunctionCallError> {
     let target_args: EnvironmentTargetArgs = parse_arguments(arguments)?;
-    let Some(turn_environment) = environments.get_or_primary(target_args.environment_id.as_deref())
-    else {
-        return Ok(None);
+    let turn_environment = match target_args.environment_id.as_deref() {
+        Some(environment_id) => environments.get_by_id(environment_id).ok_or_else(|| {
+            FunctionCallError::RespondToModel(format!(
+                "unknown turn environment id `{environment_id}`"
+            ))
+        })?,
+        None => {
+            let Some(turn_environment) = environments.primary() else {
+                return Ok(None);
+            };
+            turn_environment
+        }
     };
     let cwd = target_args
         .workdir

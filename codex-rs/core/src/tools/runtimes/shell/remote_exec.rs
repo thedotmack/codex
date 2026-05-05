@@ -230,7 +230,7 @@ fn remote_shell_process_id(call_id: &str, sandbox: SandboxType) -> String {
         SandboxType::None => format!("{call_id}:unsandboxed"),
         SandboxType::MacosSeatbelt => format!("{call_id}:seatbelt"),
         SandboxType::LinuxSeccomp => format!("{call_id}:seccomp"),
-        SandboxType::WindowsSandbox => format!("{call_id}:windows"),
+        SandboxType::WindowsRestrictedToken => format!("{call_id}:windows"),
     }
 }
 
