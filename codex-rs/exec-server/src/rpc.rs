@@ -233,19 +233,16 @@ pub(crate) struct RpcClient {
 }
 
 impl RpcClient {
-    pub(crate) fn new(connection: JsonRpcConnection) -> (Self, mpsc::Receiver<RpcClientEvent>) {
-        let connection_parts = connection.into_parts_with_lifetime();
-        let write_tx = connection_parts.outgoing_tx;
-        let mut incoming_rx = connection_parts.incoming_rx;
-        let disconnected_rx = connection_parts.disconnected_rx;
-        let transport_tasks = connection_parts.task_handles;
-        let transport_lifetime = connection_parts.transport_lifetime;
+    pub(crate) fn new(
+        connection: &mut JsonRpcConnection,
+    ) -> (Self, mpsc::Receiver<RpcClientEvent>) {
+        let (write_tx, mut incoming_rx, disconnected_rx, transport_tasks) =
+            connection.take_client_runtime();
         let pending = Arc::new(Mutex::new(HashMap::<RequestId, PendingRequest>::new()));
         let (event_tx, event_rx) = mpsc::channel(128);
 
         let pending_for_reader = Arc::clone(&pending);
         let reader_task = tokio::spawn(async move {
-            let _transport_lifetime = transport_lifetime;
             while let Some(event) = incoming_rx.recv().await {
                 match event {
                     JsonRpcConnectionEvent::Message(message) => {
@@ -305,10 +302,6 @@ impl RpcClient {
                     "JSON-RPC transport closed",
                 ))
             })
-    }
-
-    pub(crate) fn is_disconnected(&self) -> bool {
-        *self.disconnected_rx.borrow()
     }
 
     pub(crate) async fn call<P, T>(&self, method: &str, params: &P) -> Result<T, RpcCallError>
@@ -575,11 +568,9 @@ mod tests {
     async fn rpc_client_matches_out_of_order_responses_by_request_id() {
         let (client_stdin, server_reader) = tokio::io::duplex(4096);
         let (mut server_writer, client_stdout) = tokio::io::duplex(4096);
-        let (client, _events_rx) = RpcClient::new(JsonRpcConnection::from_stdio(
-            client_stdout,
-            client_stdin,
-            "test-rpc".to_string(),
-        ));
+        let mut connection =
+            JsonRpcConnection::from_stdio(client_stdout, client_stdin, "test-rpc".to_string());
+        let (client, _events_rx) = RpcClient::new(&mut connection);
 
         let server = tokio::spawn(async move {
             let mut lines = BufReader::new(server_reader).lines();

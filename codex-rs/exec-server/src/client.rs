@@ -12,6 +12,7 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde_json::Value;
 use tokio::sync::Mutex;
+use tokio::sync::OnceCell;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 
@@ -152,6 +153,9 @@ pub(crate) struct Session {
 
 struct Inner {
     client: RpcClient,
+    // Keep the connection alive for any transport-specific owned state such as
+    // the stdio child process. RpcClient only takes the runtime channels/tasks.
+    _connection: JsonRpcConnection,
     // The remote transport delivers one shared notification stream for every
     // process on the connection. Keep a local process_id -> session registry so
     // we can turn those connection-global notifications into process wakeups
@@ -191,28 +195,25 @@ pub struct ExecServerClient {
 #[derive(Clone)]
 pub(crate) struct LazyRemoteExecServerClient {
     transport: ExecServerTransport,
-    client: Arc<Mutex<Option<ExecServerClient>>>,
+    client: Arc<OnceCell<ExecServerClient>>,
 }
 
 impl LazyRemoteExecServerClient {
     pub(crate) fn new(transport: ExecServerTransport) -> Self {
         Self {
             transport,
-            client: Arc::new(Mutex::new(None)),
+            client: Arc::new(OnceCell::new()),
         }
     }
 
     pub(crate) async fn get(&self) -> Result<ExecServerClient, ExecServerError> {
-        let mut client = self.client.lock().await;
-        if let Some(client) = client.as_ref()
-            && !client.is_disconnected()
-        {
-            return Ok(client.clone());
-        }
-
-        let connected = ExecServerClient::connect_for_environment(self.transport.clone()).await?;
-        *client = Some(connected.clone());
-        Ok(connected)
+        self.client
+            .get_or_try_init(|| {
+                let transport = self.transport.clone();
+                async move { ExecServerClient::connect_for_environment(transport).await }
+            })
+            .await
+            .cloned()
     }
 }
 
@@ -264,10 +265,6 @@ pub enum ExecServerError {
 }
 
 impl ExecServerClient {
-    fn is_disconnected(&self) -> bool {
-        self.inner.disconnected_error().is_some() || self.inner.client.is_disconnected()
-    }
-
     pub async fn initialize(
         &self,
         options: ExecServerClientConnectOptions,
@@ -417,10 +414,10 @@ impl ExecServerClient {
     }
 
     pub(crate) async fn connect(
-        connection: JsonRpcConnection,
+        mut connection: JsonRpcConnection,
         options: ExecServerClientConnectOptions,
     ) -> Result<Self, ExecServerError> {
-        let (rpc_client, mut events_rx) = RpcClient::new(connection);
+        let (rpc_client, mut events_rx) = RpcClient::new(&mut connection);
         let inner = Arc::new_cyclic(|weak| {
             let weak = weak.clone();
             let reader_task = tokio::spawn(async move {
@@ -455,6 +452,7 @@ impl ExecServerClient {
 
             Inner {
                 client: rpc_client,
+                _connection: connection,
                 sessions: ArcSwap::from_pointee(HashMap::new()),
                 sessions_write_lock: Mutex::new(()),
                 disconnected: OnceLock::new(),

@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tokio::process::Child;
 use tokio::process::Command;
-use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio_tungstenite::connect_async;
 use tracing::debug;
@@ -79,7 +77,6 @@ impl ExecServerClient {
         args: StdioExecServerConnectArgs,
     ) -> Result<Self, ExecServerError> {
         let mut child = stdio_command_process(&args.command)
-            .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -110,57 +107,10 @@ impl ExecServerClient {
 
         Self::connect(
             JsonRpcConnection::from_stdio(stdout, stdin, "exec-server stdio command".to_string())
-                .with_transport_lifetime(Box::new(StdioChildGuard::spawn(child))),
+                .with_stdio_child(child),
             args.into(),
         )
         .await
-    }
-}
-
-struct StdioChildGuard {
-    shutdown_tx: Option<oneshot::Sender<()>>,
-}
-
-impl StdioChildGuard {
-    fn spawn(child: Child) -> Self {
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        tokio::spawn(supervise_stdio_child(child, shutdown_rx));
-        Self {
-            shutdown_tx: Some(shutdown_tx),
-        }
-    }
-}
-
-impl Drop for StdioChildGuard {
-    fn drop(&mut self) {
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
-        }
-    }
-}
-
-async fn supervise_stdio_child(mut child: Child, shutdown_rx: oneshot::Receiver<()>) {
-    let shutdown_requested = tokio::select! {
-        result = child.wait() => {
-            if let Err(err) = result {
-                debug!("failed to wait for exec-server stdio child: {err}");
-            }
-            false
-        }
-        _ = shutdown_rx => true,
-    };
-
-    if shutdown_requested {
-        kill_stdio_child(&mut child);
-        if let Err(err) = child.wait().await {
-            debug!("failed to wait for exec-server stdio child after shutdown: {err}");
-        }
-    }
-}
-
-fn kill_stdio_child(child: &mut Child) {
-    if let Err(err) = child.start_kill() {
-        debug!("failed to terminate exec-server stdio child: {err}");
     }
 }
 

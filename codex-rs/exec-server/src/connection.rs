@@ -3,10 +3,12 @@ use futures::SinkExt;
 use futures::StreamExt;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
+use tokio::process::Child;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
+use tracing::debug;
 
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
@@ -15,16 +17,6 @@ use tokio::io::BufWriter;
 
 pub(crate) const CHANNEL_CAPACITY: usize = 128;
 
-pub(crate) type JsonRpcTransportLifetime = Box<dyn Send>;
-
-pub(crate) struct JsonRpcConnectionParts {
-    pub(crate) outgoing_tx: mpsc::Sender<JSONRPCMessage>,
-    pub(crate) incoming_rx: mpsc::Receiver<JsonRpcConnectionEvent>,
-    pub(crate) disconnected_rx: watch::Receiver<bool>,
-    pub(crate) task_handles: Vec<tokio::task::JoinHandle<()>>,
-    pub(crate) transport_lifetime: Option<JsonRpcTransportLifetime>,
-}
-
 #[derive(Debug)]
 pub(crate) enum JsonRpcConnectionEvent {
     Message(JSONRPCMessage),
@@ -32,12 +24,24 @@ pub(crate) enum JsonRpcConnectionEvent {
     Disconnected { reason: Option<String> },
 }
 
+struct StdioTransport {
+    child: Child,
+}
+
+impl Drop for StdioTransport {
+    fn drop(&mut self) {
+        if let Err(err) = self.child.start_kill() {
+            debug!("failed to terminate exec-server stdio child: {err}");
+        }
+    }
+}
+
 pub(crate) struct JsonRpcConnection {
-    outgoing_tx: mpsc::Sender<JSONRPCMessage>,
-    incoming_rx: mpsc::Receiver<JsonRpcConnectionEvent>,
-    disconnected_rx: watch::Receiver<bool>,
+    outgoing_tx: Option<mpsc::Sender<JSONRPCMessage>>,
+    incoming_rx: Option<mpsc::Receiver<JsonRpcConnectionEvent>>,
+    disconnected_rx: Option<watch::Receiver<bool>>,
     task_handles: Vec<tokio::task::JoinHandle<()>>,
-    transport_lifetime: Option<JsonRpcTransportLifetime>,
+    _stdio_transport: Option<StdioTransport>,
 }
 
 impl JsonRpcConnection {
@@ -124,11 +128,11 @@ impl JsonRpcConnection {
         });
 
         Self {
-            outgoing_tx,
-            incoming_rx,
-            disconnected_rx,
+            outgoing_tx: Some(outgoing_tx),
+            incoming_rx: Some(incoming_rx),
+            disconnected_rx: Some(disconnected_rx),
             task_handles: vec![reader_task, writer_task],
-            transport_lifetime: None,
+            _stdio_transport: None,
         }
     }
 
@@ -259,16 +263,38 @@ impl JsonRpcConnection {
         });
 
         Self {
-            outgoing_tx,
-            incoming_rx,
-            disconnected_rx,
+            outgoing_tx: Some(outgoing_tx),
+            incoming_rx: Some(incoming_rx),
+            disconnected_rx: Some(disconnected_rx),
             task_handles: vec![reader_task, writer_task],
-            transport_lifetime: None,
+            _stdio_transport: None,
         }
     }
 
-    pub(crate) fn with_transport_lifetime(mut self, lifetime: JsonRpcTransportLifetime) -> Self {
-        self.transport_lifetime = Some(lifetime);
+    pub(crate) fn take_client_runtime(
+        &mut self,
+    ) -> (
+        mpsc::Sender<JSONRPCMessage>,
+        mpsc::Receiver<JsonRpcConnectionEvent>,
+        watch::Receiver<bool>,
+        Vec<tokio::task::JoinHandle<()>>,
+    ) {
+        (
+            self.outgoing_tx
+                .take()
+                .expect("JSON-RPC client runtime already taken"),
+            self.incoming_rx
+                .take()
+                .expect("JSON-RPC client runtime already taken"),
+            self.disconnected_rx
+                .take()
+                .expect("JSON-RPC client runtime already taken"),
+            std::mem::take(&mut self.task_handles),
+        )
+    }
+
+    pub(crate) fn with_stdio_child(mut self, child: Child) -> Self {
+        self._stdio_transport = Some(StdioTransport { child });
         self
     }
 
@@ -281,21 +307,14 @@ impl JsonRpcConnection {
         Vec<tokio::task::JoinHandle<()>>,
     ) {
         (
-            self.outgoing_tx,
-            self.incoming_rx,
-            self.disconnected_rx,
+            self.outgoing_tx
+                .expect("JSON-RPC connection parts already taken"),
+            self.incoming_rx
+                .expect("JSON-RPC connection parts already taken"),
+            self.disconnected_rx
+                .expect("JSON-RPC connection parts already taken"),
             self.task_handles,
         )
-    }
-
-    pub(crate) fn into_parts_with_lifetime(self) -> JsonRpcConnectionParts {
-        JsonRpcConnectionParts {
-            outgoing_tx: self.outgoing_tx,
-            incoming_rx: self.incoming_rx,
-            disconnected_rx: self.disconnected_rx,
-            task_handles: self.task_handles,
-            transport_lifetime: self.transport_lifetime,
-        }
     }
 }
 
