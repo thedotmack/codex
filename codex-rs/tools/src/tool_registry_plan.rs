@@ -137,8 +137,6 @@ pub fn build_tool_registry_plan(
     }
 
     if config.environment_mode.has_environment() {
-        let include_environment_id =
-            matches!(config.environment_mode, ToolEnvironmentMode::Multiple);
         match &config.shell_type {
             ConfigShellToolType::Default => {
                 plan.push_spec(
