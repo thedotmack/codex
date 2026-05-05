@@ -1,6 +1,7 @@
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
+use crate::tool_spec::maybe_insert_environment_id_parameter;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;

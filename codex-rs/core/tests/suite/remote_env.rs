@@ -261,7 +261,10 @@ async fn view_image_routing_output(
     test.submit_turn_with_environments("route view image", environments)
         .await?;
 
-    Ok(response_mock.function_call_output(call_id).clone())
+    Ok(response_mock
+        .single_request()
+        .function_call_output(call_id)
+        .clone())
 }
 async fn shell_command_response_mock(
     test: &TestCodex,

@@ -17,7 +17,6 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
-use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use codex_tools::ToolName;
@@ -100,8 +99,10 @@ impl ToolHandler for ViewImageHandler {
             }
         };
 
-        let Some(turn_environment) =
-            resolve_tool_environment(turn.as_ref(), environment_id.as_deref())?
+        let Some(turn_environment) = turn
+            .environments
+            .get_or_primary(environment_id.as_deref())
+            .cloned()
         else {
             return Err(FunctionCallError::RespondToModel(
                 "view_image is unavailable in this session".to_string(),

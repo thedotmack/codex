@@ -75,6 +75,7 @@ pub fn build_tool_registry_plan(
 ) -> ToolRegistryPlan {
     let mut plan = ToolRegistryPlan::new();
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
+    let include_environment_id = matches!(config.environment_mode, ToolEnvironmentMode::Multiple);
 
     if config.code_mode_enabled {
         let namespace_descriptions = params
