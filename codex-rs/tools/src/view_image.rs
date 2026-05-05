@@ -1,7 +1,6 @@
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
-use crate::tool_spec::maybe_insert_environment_id_parameter;
 use codex_protocol::models::VIEW_IMAGE_TOOL_NAME;
 use serde_json::Value;
 use serde_json::json;
@@ -26,7 +25,15 @@ pub fn create_view_image_tool(options: ViewImageToolOptions) -> ToolSpec {
             )),
         );
     }
-    maybe_insert_environment_id_parameter(&mut properties, options.include_environment_id);
+    if options.include_environment_id {
+        properties.insert(
+            "environment_id".to_string(),
+            JsonSchema::string(Some(
+                "Optional selected environment id to target. Omit this to use the primary environment."
+                    .to_string(),
+            )),
+        );
+    }
 
     ToolSpec::Function(ResponsesApiTool {
         name: VIEW_IMAGE_TOOL_NAME.to_string(),
