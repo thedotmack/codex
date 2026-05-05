@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
 
@@ -24,7 +23,6 @@ use tokio::task::JoinHandle;
 
 use crate::connection::JsonRpcConnection;
 use crate::connection::JsonRpcConnectionEvent;
-use crate::connection::JsonRpcTransportLifetime;
 
 #[derive(Debug)]
 pub(crate) enum RpcCallError {
@@ -231,19 +229,12 @@ pub(crate) struct RpcClient {
     disconnected_rx: watch::Receiver<bool>,
     next_request_id: AtomicI64,
     transport_tasks: Vec<JoinHandle<()>>,
-    _transport_lifetime: Option<TransportLifetime>,
     reader_task: JoinHandle<()>,
-}
-
-// Holds transport-owned resources, such as a stdio child process, for as long
-// as the RPC client owns the underlying connection.
-struct TransportLifetime {
-    _guard: StdMutex<JsonRpcTransportLifetime>,
 }
 
 impl RpcClient {
     pub(crate) fn new(connection: JsonRpcConnection) -> (Self, mpsc::Receiver<RpcClientEvent>) {
-        let connection_parts = connection.into_parts();
+        let connection_parts = connection.into_parts_with_lifetime();
         let write_tx = connection_parts.outgoing_tx;
         let mut incoming_rx = connection_parts.incoming_rx;
         let disconnected_rx = connection_parts.disconnected_rx;
@@ -254,6 +245,7 @@ impl RpcClient {
 
         let pending_for_reader = Arc::clone(&pending);
         let reader_task = tokio::spawn(async move {
+            let _transport_lifetime = transport_lifetime;
             while let Some(event) = incoming_rx.recv().await {
                 match event {
                     JsonRpcConnectionEvent::Message(message) => {
@@ -289,9 +281,6 @@ impl RpcClient {
                 disconnected_rx,
                 next_request_id: AtomicI64::new(1),
                 transport_tasks,
-                _transport_lifetime: transport_lifetime.map(|lifetime| TransportLifetime {
-                    _guard: StdMutex::new(lifetime),
-                }),
                 reader_task,
             },
             event_rx,
@@ -316,6 +305,10 @@ impl RpcClient {
                     "JSON-RPC transport closed",
                 ))
             })
+    }
+
+    pub(crate) fn is_disconnected(&self) -> bool {
+        *self.disconnected_rx.borrow()
     }
 
     pub(crate) async fn call<P, T>(&self, method: &str, params: &P) -> Result<T, RpcCallError>

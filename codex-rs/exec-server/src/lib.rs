@@ -27,6 +27,7 @@ pub use client_api::ExecServerClientConnectOptions;
 pub use client_api::ExecServerTransport;
 pub use client_api::HttpClient;
 pub use client_api::RemoteExecServerConnectArgs;
+pub use client_api::StdioExecServerCommand;
 pub use client_api::StdioExecServerConnectArgs;
 pub use codex_file_system::CopyOptions;
 pub use codex_file_system::CreateDirectoryOptions;

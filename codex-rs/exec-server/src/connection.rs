@@ -272,7 +272,23 @@ impl JsonRpcConnection {
         self
     }
 
-    pub(crate) fn into_parts(self) -> JsonRpcConnectionParts {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        mpsc::Sender<JSONRPCMessage>,
+        mpsc::Receiver<JsonRpcConnectionEvent>,
+        watch::Receiver<bool>,
+        Vec<tokio::task::JoinHandle<()>>,
+    ) {
+        (
+            self.outgoing_tx,
+            self.incoming_rx,
+            self.disconnected_rx,
+            self.task_handles,
+        )
+    }
+
+    pub(crate) fn into_parts_with_lifetime(self) -> JsonRpcConnectionParts {
         JsonRpcConnectionParts {
             outgoing_tx: self.outgoing_tx,
             incoming_rx: self.incoming_rx,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -28,17 +30,26 @@ pub struct RemoteExecServerConnectArgs {
 /// Stdio connection arguments for a command-backed exec-server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StdioExecServerConnectArgs {
-    pub shell_command: String,
+    pub command: StdioExecServerCommand,
     pub client_name: String,
     pub initialize_timeout: Duration,
     pub resume_session_id: Option<String>,
+}
+
+/// Structured process command used to start an exec-server over stdio.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdioExecServerCommand {
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub cwd: Option<PathBuf>,
 }
 
 /// Transport used to connect to a remote exec-server environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecServerTransport {
     WebSocketUrl(String),
-    StdioShellCommand(String),
+    StdioCommand(StdioExecServerCommand),
 }
 
 /// Sends HTTP requests through a runtime-selected transport.
