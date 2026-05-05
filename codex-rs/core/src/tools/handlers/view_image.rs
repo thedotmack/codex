@@ -111,7 +111,10 @@ impl ToolHandler for ViewImageHandler {
         let cwd = turn_environment.cwd.clone();
         let abs_path = cwd.join(path);
         let sandbox = turn_environment.environment.is_remote().then(|| {
-            turn.file_system_sandbox_context_for_cwd(&cwd, /*additional_permissions*/ None)
+            let mut context =
+                turn.file_system_sandbox_context(/*additional_permissions*/ None);
+            context.cwd = Some(cwd.clone());
+            context
         });
         let fs = turn_environment.environment.get_filesystem();
 
