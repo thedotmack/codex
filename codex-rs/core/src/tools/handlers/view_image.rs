@@ -110,16 +110,12 @@ impl ToolHandler for ViewImageHandler {
         };
         let cwd = turn_environment.cwd.clone();
         let abs_path = cwd.join(path);
-        let sandbox = turn_environment.environment.is_remote().then(|| {
-            let mut context =
-                turn.file_system_sandbox_context(/*additional_permissions*/ None);
-            context.cwd = Some(cwd.clone());
-            context
-        });
+        let mut sandbox = turn.file_system_sandbox_context(/*additional_permissions*/ None);
+        sandbox.cwd = Some(cwd.clone());
         let fs = turn_environment.environment.get_filesystem();
 
         let metadata = fs
-            .get_metadata(&abs_path, sandbox.as_ref())
+            .get_metadata(&abs_path, Some(&sandbox))
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
@@ -135,7 +131,7 @@ impl ToolHandler for ViewImageHandler {
             )));
         }
         let file_bytes = fs
-            .read_file(&abs_path, sandbox.as_ref())
+            .read_file(&abs_path, Some(&sandbox))
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
