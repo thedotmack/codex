@@ -167,6 +167,9 @@ pub enum RemotePluginCatalogError {
     #[error("invalid remote plugin catalog base URL: {0}")]
     InvalidBaseUrl(#[source] url::ParseError),
 
+    #[error("remote plugin catalog base URL `{base_url}` has no host")]
+    MissingBaseUrlHost { base_url: String },
+
     #[error("invalid remote plugin catalog base URL path")]
     InvalidBaseUrlPath,
 
@@ -644,8 +647,7 @@ pub async fn install_remote_plugin(
     // Remote plugin IDs uniquely identify remote plugins, so the caller-provided
     // marketplace name is not validated before sending the install mutation.
 
-    let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let url = format!("{base_url}/ps/plugins/{plugin_id}/install");
+    let url = remote_plugin_url(config, &["ps", "plugins", plugin_id, "install"])?;
     let client = build_reqwest_client();
     let request = authenticated_request(client.post(&url), auth)?;
     let response: RemotePluginMutationResponse = send_and_decode(request, &url).await?;
@@ -680,8 +682,7 @@ pub async fn uninstall_remote_plugin(
     let marketplace_name = plugin.scope.marketplace_name().to_string();
     let plugin_name = plugin.name;
 
-    let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let url = format!("{base_url}/plugins/{plugin_id}/uninstall");
+    let url = remote_plugin_url(config, &["plugins", plugin_id, "uninstall"])?;
     let client = build_reqwest_client();
     let request = authenticated_request(client.post(&url), auth)?;
     let response: RemotePluginMutationResponse = send_and_decode(request, &url).await?;
@@ -938,8 +939,7 @@ async fn get_remote_plugin_list_page(
     scope: RemotePluginScope,
     page_token: Option<&str>,
 ) -> Result<RemotePluginListResponse, RemotePluginCatalogError> {
-    let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let url = format!("{base_url}/ps/plugins/list");
+    let url = remote_plugin_url(config, &["ps", "plugins", "list"])?;
     let client = build_reqwest_client();
     let mut request = authenticated_request(client.get(&url), auth)?;
     request = request.query(&[("scope", scope.api_value())]);
@@ -957,8 +957,7 @@ async fn get_remote_plugin_installed_page(
     page_token: Option<&str>,
     include_download_urls: bool,
 ) -> Result<RemotePluginInstalledResponse, RemotePluginCatalogError> {
-    let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let url = format!("{base_url}/ps/plugins/installed");
+    let url = remote_plugin_url(config, &["ps", "plugins", "installed"])?;
     let client = build_reqwest_client();
     let mut request = authenticated_request(client.get(&url), auth)?;
     request = request.query(&[("scope", scope.api_value())]);
@@ -977,8 +976,7 @@ async fn fetch_plugin_detail(
     plugin_id: &str,
     include_download_urls: bool,
 ) -> Result<RemotePluginDirectoryItem, RemotePluginCatalogError> {
-    let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let url = format!("{base_url}/ps/plugins/{plugin_id}");
+    let url = remote_plugin_url(config, &["ps", "plugins", plugin_id])?;
     let client = build_reqwest_client();
     let mut request = authenticated_request(client.get(&url), auth)?;
     if include_download_urls {
@@ -987,25 +985,33 @@ async fn fetch_plugin_detail(
     send_and_decode(request, &url).await
 }
 
+fn remote_plugin_url(
+    config: &RemotePluginServiceConfig,
+    segments: &[&str],
+) -> Result<String, RemotePluginCatalogError> {
+    let mut url = Url::parse(config.chatgpt_base_url.trim_end_matches('/'))
+        .map_err(RemotePluginCatalogError::InvalidBaseUrl)?;
+    if !url.has_host() {
+        return Err(RemotePluginCatalogError::MissingBaseUrlHost {
+            base_url: config.chatgpt_base_url.clone(),
+        });
+    }
+    {
+        let mut path = url
+            .path_segments_mut()
+            .map_err(|()| RemotePluginCatalogError::InvalidBaseUrlPath)?;
+        path.pop_if_empty();
+        path.extend(segments);
+    }
+    Ok(url.to_string())
+}
+
 fn remote_plugin_skill_detail_url(
     config: &RemotePluginServiceConfig,
     plugin_id: &str,
     skill_name: &str,
 ) -> Result<String, RemotePluginCatalogError> {
-    let mut url = Url::parse(config.chatgpt_base_url.trim_end_matches('/'))
-        .map_err(RemotePluginCatalogError::InvalidBaseUrl)?;
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|()| RemotePluginCatalogError::InvalidBaseUrlPath)?;
-        segments.pop_if_empty();
-        segments.push("ps");
-        segments.push("plugins");
-        segments.push(plugin_id);
-        segments.push("skills");
-        segments.push(skill_name);
-    }
-    Ok(url.to_string())
+    remote_plugin_url(config, &["ps", "plugins", plugin_id, "skills", skill_name])
 }
 
 fn ensure_chatgpt_auth(auth: Option<&CodexAuth>) -> Result<&CodexAuth, RemotePluginCatalogError> {
@@ -1052,4 +1058,43 @@ async fn send_and_decode<T: for<'de> Deserialize<'de>>(
         url: url.to_string(),
         source,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(chatgpt_base_url: &str) -> RemotePluginServiceConfig {
+        RemotePluginServiceConfig {
+            chatgpt_base_url: chatgpt_base_url.to_string(),
+        }
+    }
+
+    #[test]
+    fn builds_url_from_base_and_segments() {
+        let url = remote_plugin_url(
+            &config("https://example.com/backend-api"),
+            &["ps", "plugins", "list"],
+        )
+        .expect("url");
+        assert_eq!(url, "https://example.com/backend-api/ps/plugins/list");
+    }
+
+    #[test]
+    fn drops_trailing_slash_before_appending_segments() {
+        let url = remote_plugin_url(&config("https://example.com/"), &["ps", "plugins", "list"])
+            .expect("url");
+        assert_eq!(url, "https://example.com/ps/plugins/list");
+    }
+
+    #[test]
+    fn rejects_base_url_without_host() {
+        let error = remote_plugin_url(&config("https://"), &["ps", "plugins", "list"])
+            .expect_err("host-less base URL must be rejected");
+        assert!(
+            matches!(error, RemotePluginCatalogError::MissingBaseUrlHost { .. })
+                || matches!(error, RemotePluginCatalogError::InvalidBaseUrl(_)),
+            "unexpected error: {error:?}"
+        );
+    }
 }
