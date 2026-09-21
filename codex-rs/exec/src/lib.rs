@@ -89,6 +89,7 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
@@ -656,6 +657,17 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     };
 
+    // Reject oversized input before starting a thread so non-interactive callers
+    // get an actionable message instead of the raw `turn/start` JSON-RPC error.
+    // The interactive TUI rejects the same input before it submits.
+    if let InitialOperation::UserTurn { items, .. } = &initial_operation {
+        let input_chars = user_input_text_char_count(items);
+        if input_chars > MAX_USER_INPUT_TEXT_CHARS {
+            eprintln!("{}", input_too_large_message(input_chars));
+            std::process::exit(1);
+        }
+    }
+
     // When --yolo (dangerously_bypass_approvals_and_sandbox) is set, also skip the git repo check
     // since the user is explicitly running in an externally sandboxed environment.
     if !skip_git_repo_check
@@ -1034,6 +1046,27 @@ fn approvals_reviewer_override_from_config(
     config: &Config,
 ) -> Option<codex_app_server_protocol::ApprovalsReviewer> {
     Some(config.approvals_reviewer.into())
+}
+
+/// Total number of characters across the text items in `items`.
+///
+/// Matches the app-server input-limit accounting in `TurnProcessor`: only text
+/// contributes, images and other structured items count as zero.
+fn user_input_text_char_count(items: &[UserInput]) -> usize {
+    items
+        .iter()
+        .map(|item| match item {
+            UserInput::Text { text, .. } => text.chars().count(),
+            _ => 0,
+        })
+        .sum()
+}
+
+fn input_too_large_message(actual_chars: usize) -> String {
+    format!(
+        "Input exceeds the maximum length of {MAX_USER_INPUT_TEXT_CHARS} characters ({actual_chars} provided).\n\
+         Shorten the prompt, or point Codex at files instead of inlining their contents."
+    )
 }
 
 async fn send_request_with_response<T>(
