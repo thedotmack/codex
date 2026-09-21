@@ -23,6 +23,47 @@ fn exec_defaults_analytics_to_enabled() {
 }
 
 #[test]
+fn user_input_text_char_count_sums_text_and_ignores_images() {
+    let items = vec![
+        UserInput::LocalImage {
+            path: PathBuf::from("/tmp/image.png"),
+        },
+        UserInput::Text {
+            text: "hello".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Text {
+            text: "world".to_string(),
+            text_elements: Vec::new(),
+        },
+    ];
+
+    assert_eq!(user_input_text_char_count(&items), 10);
+}
+
+#[test]
+fn user_input_text_char_count_matches_limit_accounting() {
+    let items = vec![UserInput::Text {
+        text: "x".repeat(MAX_USER_INPUT_TEXT_CHARS + 1),
+        text_elements: Vec::new(),
+    }];
+
+    assert_eq!(
+        user_input_text_char_count(&items),
+        MAX_USER_INPUT_TEXT_CHARS + 1
+    );
+}
+
+#[test]
+fn input_too_large_message_names_limit_actual_and_fix() {
+    let message = input_too_large_message(MAX_USER_INPUT_TEXT_CHARS + 42);
+
+    assert!(message.contains(&MAX_USER_INPUT_TEXT_CHARS.to_string()));
+    assert!(message.contains(&(MAX_USER_INPUT_TEXT_CHARS + 42).to_string()));
+    assert!(message.contains("Shorten the prompt"));
+}
+
+#[test]
 fn exec_root_span_can_be_parented_from_trace_context() {
     let subscriber = test_tracing_subscriber();
     let _guard = tracing::subscriber::set_default(subscriber);
